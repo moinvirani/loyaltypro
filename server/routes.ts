@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { db } from "@db";
 import { businesses, branches, customers, loyaltyCards, notifications } from "@db/schema";
-import { eq, count, sql, desc } from "drizzle-orm";
+import { eq, count, sql, desc, and } from "drizzle-orm";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -100,6 +100,78 @@ export function registerRoutes(app: Express): Server {
     res.json(engagement);
   });
 
+  // Branches endpoints
+  app.get("/api/branches", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const branchList = await db.query.branches.findMany({
+      where: eq(branches.businessId, businessId),
+      orderBy: [branches.createdAt],
+    });
+    res.json(branchList);
+  });
+
+  app.post("/api/branches", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const { name, address } = req.body;
+
+    // Check branch limit
+    const [{ count: branchCount }] = await db
+      .select({ count: count() })
+      .from(branches)
+      .where(eq(branches.businessId, businessId));
+
+    if (Number(branchCount) >= 3) {
+      return res.status(400).json({ message: "Maximum branch limit reached (3)" });
+    }
+
+    const newBranch = await db
+      .insert(branches)
+      .values({ businessId, name, address })
+      .returning();
+
+    res.json(newBranch[0]);
+  });
+
+  app.put("/api/branches/:id", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const branchId = parseInt(req.params.id);
+    const { name, address } = req.body;
+
+    const updatedBranch = await db
+      .update(branches)
+      .set({ name, address })
+      .where(and(
+        eq(branches.id, branchId),
+        eq(branches.businessId, businessId)
+      ))
+      .returning();
+
+    if (!updatedBranch.length) {
+      return res.status(404).json({ message: "Branch not found" });
+    }
+
+    res.json(updatedBranch[0]);
+  });
+
+  app.delete("/api/branches/:id", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const branchId = parseInt(req.params.id);
+
+    const deletedBranch = await db
+      .delete(branches)
+      .where(and(
+        eq(branches.id, branchId),
+        eq(branches.businessId, businessId)
+      ))
+      .returning();
+
+    if (!deletedBranch.length) {
+      return res.status(404).json({ message: "Branch not found" });
+    }
+
+    res.json({ message: "Branch deleted successfully" });
+  });
+
   // Cards endpoints
   app.get("/api/cards", async (req, res) => {
     const businessId = 1; // TODO: Get from auth
@@ -118,14 +190,6 @@ export function registerRoutes(app: Express): Server {
     res.json(customers);
   });
 
-  // Branches endpoints
-  app.get("/api/branches", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
-    const branches = await db.query.branches.findMany({
-      where: eq(branches.businessId, businessId),
-    });
-    res.json(branches);
-  });
 
   return httpServer;
 }
