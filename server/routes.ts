@@ -254,10 +254,10 @@ export function registerRoutes(app: Express): Server {
   // Customers endpoints
   app.get("/api/customers", async (req, res) => {
     const businessId = 1; // TODO: Get from auth
-    const customers = await db.query.customers.findMany({
+    const customerList = await db.query.customers.findMany({
       where: eq(customers.businessId, businessId),
     });
-    res.json(customers);
+    res.json(customerList);
   });
 
 
