@@ -6,6 +6,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import Dashboard from "@/pages/dashboard";
 import CardDesigner from "@/pages/card-designer";
 import Customers from "@/pages/customers";
+import CustomerMetrics from "@/pages/customers/metrics";
 import Branches from "@/pages/branches";
 import NotFound from "@/pages/not-found";
 
@@ -15,6 +16,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/cards" component={CardDesigner} />
       <Route path="/customers" component={Customers} />
+      <Route path="/customers/metrics" component={CustomerMetrics} />
       <Route path="/branches" component={Branches} />
       <Route component={NotFound} />
     </Switch>

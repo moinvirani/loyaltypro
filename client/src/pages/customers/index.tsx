@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   Table,
   TableBody,
@@ -10,12 +11,12 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, UserPlus } from "lucide-react";
+import { Search, UserPlus, BarChart2 } from "lucide-react";
 import type { Customer } from "@db/schema";
 
 export default function CustomersPage() {
   const [search, setSearch] = useState("");
-  
+
   const { data: customers } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
   });
@@ -34,10 +35,18 @@ export default function CustomersPage() {
             Manage your loyalty program members
           </p>
         </div>
-        <Button>
-          <UserPlus className="mr-2 h-4 w-4" />
-          Add Customer
-        </Button>
+        <div className="space-x-2">
+          <Link href="/customers/metrics">
+            <Button variant="outline">
+              <BarChart2 className="mr-2 h-4 w-4" />
+              View Metrics
+            </Button>
+          </Link>
+          <Button>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add Customer
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-center space-x-2">

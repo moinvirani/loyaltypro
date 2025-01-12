@@ -100,6 +100,76 @@ export function registerRoutes(app: Express): Server {
     res.json(engagement);
   });
 
+  // Customer Engagement Metrics
+  app.get("/api/analytics/customer-segments", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const segments = [
+      { name: "New", days: 30 },
+      { name: "Active", days: 90 },
+      { name: "At Risk", days: 180 },
+      { name: "Inactive", days: null },
+    ];
+
+    const segmentData = await Promise.all(
+      segments.map(async ({ name, days }) => {
+        const [result] = await db
+          .select({ count: count() })
+          .from(customers)
+          .where(
+            sql`${customers.businessId} = ${businessId} 
+                ${days 
+                  ? sql`AND ${customers.createdAt} >= NOW() - INTERVAL '${days} days'`
+                  : sql`AND ${customers.createdAt} < NOW() - INTERVAL '180 days'`
+                }`
+          );
+
+        return {
+          segment: name,
+          count: Number(result.count),
+        };
+      })
+    );
+
+    res.json(segmentData);
+  });
+
+  app.get("/api/analytics/points-trends", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const trends = await db
+      .select({
+        date: sql<string>`DATE_TRUNC('month', ${customers.createdAt})::text`,
+        averagePoints: sql`AVG(${customers.points})::float`,
+        totalCustomers: count(),
+      })
+      .from(customers)
+      .where(eq(customers.businessId, businessId))
+      .groupBy(sql`DATE_TRUNC('month', ${customers.createdAt})`)
+      .orderBy(sql`DATE_TRUNC('month', ${customers.createdAt})`);
+
+    res.json(trends);
+  });
+
+  app.get("/api/analytics/customer-retention", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const months = 6;
+
+    const cohorts = await db
+      .select({
+        cohort: sql<string>`DATE_TRUNC('month', ${customers.createdAt})::text`,
+        count: count(),
+      })
+      .from(customers)
+      .where(
+        sql`${customers.businessId} = ${businessId} 
+            AND ${customers.createdAt} >= NOW() - INTERVAL '${months} months'`
+      )
+      .groupBy(sql`DATE_TRUNC('month', ${customers.createdAt})`)
+      .orderBy(sql`DATE_TRUNC('month', ${customers.createdAt})`);
+
+    res.json(cohorts);
+  });
+
+
   // Branches endpoints
   app.get("/api/branches", async (req, res) => {
     const businessId = 1; // TODO: Get from auth
