@@ -22,7 +22,15 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
         <div className="h-full flex flex-col">
           <div className="flex items-center gap-2" style={{ color: design.primaryColor }}>
             {design.logo ? (
-              <img src={design.logo} alt="Logo" className="h-8 w-8 object-contain" />
+              <img 
+                src={design.logo} 
+                alt="Logo" 
+                className="h-8 w-8 object-contain" 
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  console.error('Failed to load logo');
+                }}
+              />
             ) : (
               <Layout className="h-8 w-8" />
             )}
