@@ -23,7 +23,7 @@ interface CardDesignerProps {
 export default function CardDesigner({ initialCard, onClose }: CardDesignerProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: initialCard?.name || "",
@@ -35,24 +35,11 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     }
   });
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) {
-      console.log("No file selected");
-      return;
-    }
+    if (!file) return;
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast({
-        title: "Error",
-        description: "Image size must be less than 5MB",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Validate file type
+    // Simple file type validation
     if (!file.type.startsWith('image/')) {
       toast({
         title: "Error",
@@ -62,68 +49,52 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       return;
     }
 
-    try {
-      setIsProcessing(true);
-      console.log("Processing image:", file.name, file.type, file.size);
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        console.log("Image loaded successfully");
-        const base64 = reader.result as string;
-        setFormData(prev => ({
-          ...prev,
-          design: { ...prev.design, logo: base64 }
-        }));
-      };
-
-      reader.onerror = (error) => {
-        console.error("FileReader error:", error);
-        toast({
-          title: "Error",
-          description: "Failed to read image file",
-          variant: "destructive",
-        });
-      };
-
-      reader.readAsDataURL(file);
-    } catch (error) {
-      console.error("Image processing error:", error);
+    // Simple size validation (5MB)
+    if (file.size > 5 * 1024 * 1024) {
       toast({
         title: "Error",
-        description: "Failed to process image",
+        description: "Image size must be less than 5MB",
         variant: "destructive",
       });
-    } finally {
-      setIsProcessing(false);
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string') {
+        setFormData(prev => ({
+          ...prev,
+          design: { ...prev.design, logo: result }
+        }));
+      }
+    };
+
+    reader.readAsDataURL(file);
   };
 
   const saveCard = useMutation({
     mutationFn: async (data: typeof formData) => {
-      console.log("Saving card with data:", {
-        ...data,
-        design: {
-          ...data.design,
-          logo: data.design.logo ? "base64_data" : null
-        }
-      });
+      setIsLoading(true);
+      try {
+        const res = await fetch(
+          `/api/cards${initialCard ? `/${initialCard.id}` : ''}`,
+          {
+            method: initialCard ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          }
+        );
 
-      const res = await fetch(
-        `/api/cards${initialCard ? `/${initialCard.id}` : ''}`,
-        {
-          method: initialCard ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
+        if (!res.ok) {
+          const error = await res.text();
+          throw new Error(error);
         }
-      );
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Card save error:", errorText);
-        throw new Error(errorText);
+        return res.json();
+      } finally {
+        setIsLoading(false);
       }
-
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/cards'] });
@@ -134,7 +105,6 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       onClose();
     },
     onError: (error: Error) => {
-      console.error("Card save mutation error:", error);
       toast({
         title: "Error",
         description: error.message,
@@ -173,8 +143,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               type="file"
               accept="image/*"
               onChange={handleLogoUpload}
-              className="cursor-pointer"
-              disabled={isProcessing}
+              disabled={isLoading}
             />
             {formData.design.logo && (
               <div className="mt-2">
@@ -182,18 +151,6 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
                   src={formData.design.logo} 
                   alt="Logo preview" 
                   className="w-16 h-16 object-contain border rounded"
-                  onError={(e) => {
-                    console.error("Logo preview error");
-                    toast({
-                      title: "Error",
-                      description: "Failed to load image preview",
-                      variant: "destructive",
-                    });
-                    setFormData(prev => ({
-                      ...prev,
-                      design: { ...prev.design, logo: "" }
-                    }));
-                  }}
                 />
               </div>
             )}
@@ -263,7 +220,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
           <Button
             className="w-full"
             onClick={() => saveCard.mutate(formData)}
-            disabled={saveCard.isPending || !formData.name}
+            disabled={isLoading || !formData.name}
           >
             <Save className="mr-2 h-4 w-4" />
             Save Card

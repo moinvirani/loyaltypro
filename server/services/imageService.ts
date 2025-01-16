@@ -15,18 +15,18 @@ export async function processImage(base64Image: string): Promise<ProcessedImage>
     // Process image with Sharp
     const processed = await sharp(buffer)
       .resize(200, 200, {
-        fit: 'inside',
-        withoutEnlargement: true
+        fit: 'contain',
+        background: { r: 255, g: 255, b: 255, alpha: 0 }
       })
-      .jpeg({ quality: 80 })
+      .toFormat('png')
       .toBuffer();
 
     // Convert back to base64
-    const processedBase64 = `data:image/jpeg;base64,${processed.toString('base64')}`;
+    const processedBase64 = `data:image/png;base64,${processed.toString('base64')}`;
 
     return {
       data: processedBase64,
-      format: 'jpeg',
+      format: 'png',
       size: processed.length
     };
   } catch (error) {
@@ -38,14 +38,20 @@ export async function processImage(base64Image: string): Promise<ProcessedImage>
 export function validateImage(base64Image: string): boolean {
   if (!base64Image) return false;
 
-  // Check if it's a valid base64 image string
-  const regex = /^data:image\/(jpeg|png|gif|webp);base64,/;
-  if (!regex.test(base64Image)) return false;
+  // Basic validation for base64 image string
+  if (!base64Image.startsWith('data:image/')) return false;
 
-  // Check size (max 5MB)
-  const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
-  const size = Buffer.from(base64Data, 'base64').length;
-  if (size > 5 * 1024 * 1024) return false;
+  try {
+    // Remove data URL prefix
+    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
 
-  return true;
+    // Check size (max 5MB)
+    if (buffer.length > 5 * 1024 * 1024) return false;
+
+    return true;
+  } catch (error) {
+    console.error('Image validation error:', error);
+    return false;
+  }
 }
