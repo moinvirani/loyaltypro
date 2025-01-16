@@ -40,23 +40,17 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
             ))}
           </div>
 
-          <div className="flex-1 flex items-center justify-center">
-            <div className="bg-white p-2 rounded-lg">
-              <QRCodeSVG 
-                value={customerId || "preview"} 
-                size={120}
-                level="H"
-                includeMargin={false}
-              />
+          {customerId && (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="bg-white p-2 rounded-lg">
+                <QRCodeSVG 
+                  value={customerId}
+                  size={120}
+                  level="H"
+                />
+              </div>
             </div>
-          </div>
-
-          <div
-            className="mt-4 text-sm text-center"
-            style={{ color: design.primaryColor }}
-          >
-            Scan to join our loyalty program
-          </div>
+          )}
         </div>
       </div>
     </div>
