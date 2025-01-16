@@ -32,29 +32,96 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     stamps: 5,
   });
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "Error",
+        description: "Image size must be less than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Error",
+        description: "Please upload an image file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Create an image element to get dimensions
+      const img = new Image();
       const reader = new FileReader();
+
       reader.onload = (e) => {
-        setDesign(d => ({ ...d, logo: e.target?.result as string }));
+        img.src = e.target?.result as string;
       };
+
+      img.onload = () => {
+        // Create a canvas to resize the image
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set maximum dimensions
+        const MAX_WIDTH = 400;
+        const MAX_HEIGHT = 400;
+
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate new dimensions while maintaining aspect ratio
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        // Set canvas dimensions and draw resized image
+        canvas.width = width;
+        canvas.height = height;
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Get base64 string with reduced quality
+        const resizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        setDesign(d => ({ ...d, logo: resizedBase64 }));
+      };
+
       reader.readAsDataURL(file);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to process image",
+        variant: "destructive",
+      });
     }
   };
 
   const saveCard = useMutation({
-    mutationFn: async (cardData: typeof design) => {
+    mutationFn: async (data: typeof design) => {
       const res = await fetch(`/api/cards${initialCard ? `/${initialCard.id}` : ''}`, {
         method: initialCard ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: cardData.name,
+          name: data.name,
           design: {
-            primaryColor: cardData.primaryColor,
-            backgroundColor: cardData.backgroundColor,
-            logo: cardData.logo,
-            stamps: cardData.stamps
+            primaryColor: data.primaryColor,
+            backgroundColor: data.backgroundColor,
+            logo: data.logo,
+            stamps: data.stamps
           },
           isActive: true
         }),
@@ -215,7 +282,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
           </div>
 
           <div className="flex gap-2">
-            <Button 
+            <Button
               className="flex-1"
               onClick={() => saveCard.mutate(design)}
               disabled={saveCard.isPending || !design.name}
@@ -239,9 +306,9 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
           {initialCard && design.logo && (
             <div className="mt-4">
               <Label>Share with Customers</Label>
-              <CardPreview 
-                design={design} 
-                customerId={getShareableUrl()} 
+              <CardPreview
+                design={design}
+                customerId={getShareableUrl()}
               />
               <p className="text-sm text-muted-foreground mt-2 text-center">
                 Scan QR code to add to Apple Wallet
