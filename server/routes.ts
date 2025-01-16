@@ -3,6 +3,9 @@ import { createServer, type Server } from "http";
 import { db } from "@db";
 import { businesses, branches, customers, loyaltyCards, notifications } from "@db/schema";
 import { eq, count, sql, desc, and } from "drizzle-orm";
+import { Template } from "@destinationstransfers/passkit";
+import fs from "fs/promises";
+import path from "path";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -260,6 +263,66 @@ export function registerRoutes(app: Express): Server {
     res.json(customerList);
   });
 
+  // Apple Wallet pass generation
+  app.post("/api/cards/:id/wallet-pass", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const cardId = parseInt(req.params.id);
+
+    try {
+      // Get card details
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.id, cardId),
+      });
+
+      if (!card) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+
+      // Create pass template
+      const template = new Template("storeCard", {
+        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+        teamIdentifier: process.env.APPLE_TEAM_ID,
+        organizationName: "Loyalty Pro",
+        description: card.name,
+      });
+
+      // Set pass styling based on card design
+      template.style({
+        labelColor: "rgb(45, 45, 45)",
+        foregroundColor: "rgb(45, 45, 45)",
+        backgroundColor: card.design.backgroundColor,
+      });
+
+      // Add logo if exists
+      if (card.design.logo) {
+        template.images.add("icon", Buffer.from(card.design.logo, "base64"));
+        template.images.add("logo", Buffer.from(card.design.logo, "base64"));
+      }
+
+      // Set card information
+      template.primaryFields.add({
+        key: "points",
+        label: "Points",
+        value: 0,
+      });
+
+      // Generate pass
+      const pass = await template.sign(
+        process.env.APPLE_SIGNING_CERT!,
+        process.env.APPLE_SIGNING_KEY!,
+      );
+
+      // Send pass file
+      res.set({
+        "Content-Type": "application/vnd.apple.pkpass",
+        "Content-disposition": `attachment; filename=${card.name}.pkpass`,
+      });
+      res.send(Buffer.from(await pass.getAsBuffer()));
+    } catch (error: any) {
+      console.error("Error generating pass:", error);
+      res.status(500).json({ message: "Failed to generate pass" });
+    }
+  });
 
   return httpServer;
 }

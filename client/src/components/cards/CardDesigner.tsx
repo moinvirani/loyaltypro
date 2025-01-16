@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CardPreview } from "./CardPreview";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, Wallet } from "lucide-react";
 import type { LoyaltyCard } from "@db/schema";
 
 interface CardDesignerProps {
@@ -16,7 +16,7 @@ interface CardDesignerProps {
 export default function CardDesigner({ initialCard, onClose }: CardDesignerProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const [design, setDesign] = useState({
     name: initialCard?.name || "",
     primaryColor: "#000000",
@@ -31,7 +31,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cardData),
       });
-      
+
       if (!res.ok) throw new Error('Failed to save card');
       return res.json();
     },
@@ -51,6 +51,46 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       });
     },
   });
+
+  const generateWalletPass = async () => {
+    if (!initialCard) {
+      toast({
+        title: "Error",
+        description: "Please save the card first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/cards/${initialCard.id}/wallet-pass`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) throw new Error('Failed to generate pass');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${design.name}.pkpass`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: "Wallet pass generated successfully",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to generate wallet pass",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="grid gap-8 lg:grid-cols-2">
@@ -108,14 +148,27 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             </div>
           </div>
 
-          <Button 
-            className="w-full"
-            onClick={() => saveCard.mutate(design)}
-            disabled={saveCard.isPending}
-          >
-            <Save className="mr-2 h-4 w-4" />
-            Save Card
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              className="flex-1"
+              onClick={() => saveCard.mutate(design)}
+              disabled={saveCard.isPending}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              Save Card
+            </Button>
+
+            {initialCard && (
+              <Button
+                variant="secondary"
+                onClick={generateWalletPass}
+                className="flex-1"
+              >
+                <Wallet className="mr-2 h-4 w-4" />
+                Add to Apple Wallet
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
