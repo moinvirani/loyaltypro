@@ -37,7 +37,10 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log("No file selected");
+      return;
+    }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
@@ -61,17 +64,20 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
 
     try {
       setIsProcessing(true);
-      const reader = new FileReader();
+      console.log("Processing image:", file.name, file.type, file.size);
 
-      reader.onload = async (e) => {
-        const base64 = e.target?.result as string;
+      const reader = new FileReader();
+      reader.onload = () => {
+        console.log("Image loaded successfully");
+        const base64 = reader.result as string;
         setFormData(prev => ({
           ...prev,
           design: { ...prev.design, logo: base64 }
         }));
       };
 
-      reader.onerror = () => {
+      reader.onerror = (error) => {
+        console.error("FileReader error:", error);
         toast({
           title: "Error",
           description: "Failed to read image file",
@@ -81,6 +87,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
 
       reader.readAsDataURL(file);
     } catch (error) {
+      console.error("Image processing error:", error);
       toast({
         title: "Error",
         description: "Failed to process image",
@@ -93,36 +100,27 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
 
   const saveCard = useMutation({
     mutationFn: async (data: typeof formData) => {
-      // Compress logo if it exists and is too large
-      let compressedData = { ...data };
-      if (data.design.logo && data.design.logo.length > 100000) {
-        const img = new Image();
-        img.src = data.design.logo;
-        await new Promise((resolve) => {
-          img.onload = resolve;
-        });
-
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error("Failed to get canvas context");
-
-        canvas.width = 200;
-        canvas.height = 200;
-        ctx.drawImage(img, 0, 0, 200, 200);
-        compressedData.design.logo = canvas.toDataURL('image/jpeg', 0.5);
-      }
+      console.log("Saving card with data:", {
+        ...data,
+        design: {
+          ...data.design,
+          logo: data.design.logo ? "base64_data" : null
+        }
+      });
 
       const res = await fetch(
         `/api/cards${initialCard ? `/${initialCard.id}` : ''}`,
         {
           method: initialCard ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(compressedData),
+          body: JSON.stringify(data),
         }
       );
 
       if (!res.ok) {
-        throw new Error(await res.text());
+        const errorText = await res.text();
+        console.error("Card save error:", errorText);
+        throw new Error(errorText);
       }
 
       return res.json();
@@ -136,6 +134,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       onClose();
     },
     onError: (error: Error) => {
+      console.error("Card save mutation error:", error);
       toast({
         title: "Error",
         description: error.message,
@@ -183,7 +182,8 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
                   src={formData.design.logo} 
                   alt="Logo preview" 
                   className="w-16 h-16 object-contain border rounded"
-                  onError={() => {
+                  onError={(e) => {
+                    console.error("Logo preview error");
                     toast({
                       title: "Error",
                       description: "Failed to load image preview",
