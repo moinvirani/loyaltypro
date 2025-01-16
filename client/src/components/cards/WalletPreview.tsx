@@ -15,7 +15,9 @@ interface WalletPreviewProps {
 
 export function WalletPreview({ design, cardId }: WalletPreviewProps) {
   // Generate QR code value based on card ID
-  const qrValue = cardId ? `card-${cardId}` : 'preview';
+  const qrValue = cardId 
+    ? `https://${window.location.host}/api/cards/${cardId}/wallet-pass`
+    : 'preview';
 
   return (
     <div className="rounded-xl overflow-hidden shadow-lg max-w-sm mx-auto">
@@ -69,7 +71,7 @@ export function WalletPreview({ design, cardId }: WalletPreviewProps) {
               className="bg-white p-2 rounded-lg"
             />
             <div className="text-xs text-gray-500 text-center">
-              Scan to check in or earn points
+              Scan to add to Apple Wallet
             </div>
           </div>
         </div>
