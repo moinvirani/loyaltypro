@@ -6,6 +6,21 @@ import { eq, count, sql, desc, and } from "drizzle-orm";
 import { processImage, validateImage } from "./services/imageService";
 import { Template } from "@destinationstransfers/passkit";
 
+// Utility function to format PEM content
+function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
+  // First decode from base64 to get the original content
+  const decoded = Buffer.from(base64Content, 'base64').toString('base64');
+
+  // Split the content into lines of 64 characters
+  const chunks = decoded.match(/.{1,64}/g) || [];
+
+  return [
+    `-----BEGIN ${type}-----`,
+    ...chunks,
+    `-----END ${type}-----`
+  ].join('\n');
+}
+
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
@@ -382,7 +397,11 @@ export function registerRoutes(app: Express): Server {
       console.log('Has Signing Key:', !!process.env.APPLE_SIGNING_KEY);
       console.log('Has WWDR Cert:', !!process.env.APPLE_WWDR_CERT);
 
-      // Create pass template with minimal required fields
+      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
+        throw new Error('Missing required certificates');
+      }
+
+      // Create pass template
       const template = new Template('storeCard', {
         formatVersion: 1,
         passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
@@ -392,10 +411,15 @@ export function registerRoutes(app: Express): Server {
         serialNumber: `card-${card.id}`,
       });
 
+      // Format certificates properly
+      const signingCert = formatPEM(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE');
+      const signingKey = formatPEM(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY');
+      const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT!, 'CERTIFICATE');
+
       // Set certificates
-      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
-        throw new Error('Missing required certificates');
-      }
+      template.setCertificate(signingCert);
+      template.setPrivateKey(signingKey);
+      template.setWWDRcertificate(wwdrCert); // WWDR certificate
 
       // Add basic styling
       template.backgroundColor = card.design.backgroundColor;
@@ -423,25 +447,18 @@ export function registerRoutes(app: Express): Server {
         messageEncoding: 'iso-8859-1',
       }];
 
-      // Format and add certificates to template
-      const formatPEM = (pemContent: string, type: string) => {
-        const base64 = Buffer.from(pemContent, 'base64').toString('utf-8');
-        return `-----BEGIN ${type}-----\n${base64}\n-----END ${type}-----`;
-      };
-
-      template.setCertificate(formatPEM(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE'));
-      template.setPrivateKey(formatPEM(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY'));
-      template.setWWDRcertificate(formatPEM(process.env.APPLE_WWDR_CERT!, 'CERTIFICATE'));
-
-      // Generate the pass
-      const buffer = await template.generate();
+      // Generate the pass file
+      const buffer = await template.signAndGenerate({
+        signingCert,
+        signingKey,
+        wwdrCert,
+      });
 
       // Send the pass file
       res.set({
         'Content-Type': 'application/vnd.apple.pkpass',
-        'Content-Disposition': `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
+        'Content-disposition': `attachment; filename=${card.name}.pkpass`,
       });
-
       res.send(buffer);
 
     } catch (error: any) {
