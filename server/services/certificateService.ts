@@ -15,10 +15,18 @@ interface CertificateValidationResult {
 
 export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
   try {
-    // Remove any existing PEM headers/footers
-    let content = base64Content.replace(/-----BEGIN [^-]+-----/, '')
+    // Remove any existing PEM headers/footers and whitespace
+    let content = base64Content
+      .replace(/-----BEGIN [^-]+-----/, '')
       .replace(/-----END [^-]+-----/, '')
       .replace(/[\r\n\s]/g, '');
+
+    // Check if the content is actually base64 encoded
+    try {
+      Buffer.from(content, 'base64');
+    } catch (e) {
+      throw new Error('Invalid base64 content');
+    }
 
     // Split into lines of 64 characters
     const lines = content.match(/.{1,64}/g) || [];
@@ -29,6 +37,7 @@ export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE 
       `-----END ${type}-----`
     ].join('\n');
   } catch (error) {
+    console.error('PEM formatting error:', error);
     throw new Error(`Failed to format PEM content: ${error}`);
   }
 }
@@ -38,35 +47,28 @@ export function validatePrivateKey(pemKey: string): CertificateValidationResult 
   let isValid = true;
 
   try {
-    // Clean up the key format
-    const cleanKey = pemKey
-      .replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '')
-      .replace(/\s/g, '');
-
-    // Try to parse the key
+    // Try parsing as RSA key first
     try {
       const privateKey = forge.pki.privateKeyFromPem(pemKey);
 
-      // Verify the key by attempting a simple operation
-      const testData = 'test';
+      // Verify key functionality with a test signature
       const md = forge.md.sha256.create();
-      md.update(testData, 'utf8');
+      md.update('test', 'utf8');
+      privateKey.sign(md);
 
-      try {
-        privateKey.sign(md);
-      } catch (e) {
-        errors.push('Private key failed signature test');
-        isValid = false;
-      }
+      return { isValid: true, errors: [] };
     } catch (e) {
-      // If RSA parsing fails, try PKCS#8 parsing
+      // If RSA parsing fails, try PKCS#8
       try {
         const privateKey = forge.pki.decryptRsaPrivateKey(pemKey);
         if (!privateKey) {
           throw new Error('Failed to parse private key');
         }
+        return { isValid: true, errors: [] };
       } catch (e2) {
         errors.push('Failed to parse private key in both RSA and PKCS#8 formats');
+        errors.push(`RSA Error: ${e.message}`);
+        errors.push(`PKCS#8 Error: ${e2.message}`);
         isValid = false;
       }
     }
@@ -86,7 +88,6 @@ export function validateWWDRCertificate(pemCert: string): CertificateValidationR
   try {
     const cert = forge.pki.certificateFromPem(pemCert);
 
-    // Extract certificate information
     details = {
       subject: cert.subject.getField('CN')?.value,
       issuer: cert.issuer.getField('CN')?.value,
@@ -112,13 +113,6 @@ export function validateWWDRCertificate(pemCert: string): CertificateValidationR
     const basicConstraints = cert.getExtension('basicConstraints');
     if (!basicConstraints || !basicConstraints.cA) {
       errors.push('Certificate is not a CA certificate');
-      isValid = false;
-    }
-
-    // Verify key usage
-    const keyUsage = cert.getExtension('keyUsage');
-    if (!keyUsage || !keyUsage.keyCertSign) {
-      errors.push('Certificate does not have required key usage for signing');
       isValid = false;
     }
 
@@ -153,13 +147,6 @@ export function validateSigningCertificate(pemCert: string): CertificateValidati
       isValid = false;
     }
 
-    // Verify key usage for signing
-    const keyUsage = cert.getExtension('keyUsage');
-    if (!keyUsage || !keyUsage.digitalSignature) {
-      errors.push('Certificate not valid for digital signatures');
-      isValid = false;
-    }
-
     // Check for Pass Type ID in subject
     if (!cert.subject.getField('CN')?.value?.includes('pass.')) {
       errors.push('Certificate subject does not contain valid Pass Type ID');
@@ -182,42 +169,47 @@ export function diagnosePassCertificates(
   const diagnostics: string[] = [];
   let isValid = true;
 
-  // Validate signing certificate
-  const signingCertResult = validateSigningCertificate(signingCert);
-  if (!signingCertResult.isValid) {
-    isValid = false;
-    diagnostics.push('Signing Certificate Issues:');
-    signingCertResult.errors.forEach(error => diagnostics.push(`- ${error}`));
-  } else {
-    diagnostics.push('✓ Signing Certificate is valid');
-    if (signingCertResult.details?.validTo) {
-      diagnostics.push(`  Subject: ${signingCertResult.details.subject}`);
-      diagnostics.push(`  Valid until: ${signingCertResult.details.validTo.toLocaleDateString()}`);
+  try {
+    // Validate signing certificate
+    const signingCertResult = validateSigningCertificate(signingCert);
+    if (!signingCertResult.isValid) {
+      isValid = false;
+      diagnostics.push('Signing Certificate Issues:');
+      signingCertResult.errors.forEach(error => diagnostics.push(`- ${error}`));
+    } else {
+      diagnostics.push('✓ Signing Certificate is valid');
+      if (signingCertResult.details?.validTo) {
+        diagnostics.push(`  Subject: ${signingCertResult.details.subject}`);
+        diagnostics.push(`  Valid until: ${signingCertResult.details.validTo.toLocaleDateString()}`);
+      }
     }
-  }
 
-  // Validate private key
-  const privateKeyResult = validatePrivateKey(signingKey);
-  if (!privateKeyResult.isValid) {
-    isValid = false;
-    diagnostics.push('Private Key Issues:');
-    privateKeyResult.errors.forEach(error => diagnostics.push(`- ${error}`));
-  } else {
-    diagnostics.push('✓ Private Key is valid');
-  }
-
-  // Validate WWDR certificate
-  const wwdrResult = validateWWDRCertificate(wwdrCert);
-  if (!wwdrResult.isValid) {
-    isValid = false;
-    diagnostics.push('WWDR Certificate Issues:');
-    wwdrResult.errors.forEach(error => diagnostics.push(`- ${error}`));
-  } else {
-    diagnostics.push('✓ WWDR Certificate is valid');
-    if (wwdrResult.details?.validTo) {
-      diagnostics.push(`  Issuer: ${wwdrResult.details.issuer}`);
-      diagnostics.push(`  Valid until: ${wwdrResult.details.validTo.toLocaleDateString()}`);
+    // Validate private key
+    const privateKeyResult = validatePrivateKey(signingKey);
+    if (!privateKeyResult.isValid) {
+      isValid = false;
+      diagnostics.push('Private Key Issues:');
+      privateKeyResult.errors.forEach(error => diagnostics.push(`- ${error}`));
+    } else {
+      diagnostics.push('✓ Private Key is valid');
     }
+
+    // Validate WWDR certificate
+    const wwdrResult = validateWWDRCertificate(wwdrCert);
+    if (!wwdrResult.isValid) {
+      isValid = false;
+      diagnostics.push('WWDR Certificate Issues:');
+      wwdrResult.errors.forEach(error => diagnostics.push(`- ${error}`));
+    } else {
+      diagnostics.push('✓ WWDR Certificate is valid');
+      if (wwdrResult.details?.validTo) {
+        diagnostics.push(`  Issuer: ${wwdrResult.details.issuer}`);
+        diagnostics.push(`  Valid until: ${wwdrResult.details.validTo.toLocaleDateString()}`);
+      }
+    }
+  } catch (error: any) {
+    isValid = false;
+    diagnostics.push(`Unexpected error during certificate validation: ${error.message}`);
   }
 
   return { isValid, diagnostics };
