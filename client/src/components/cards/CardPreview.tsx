@@ -1,6 +1,6 @@
 
 import { Layout } from "lucide-react";
-import QRCode from "qrcode.react";
+import { QRCodeSVG } from "qrcode.react";
 
 interface CardPreviewProps {
   design: {
@@ -42,7 +42,7 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
 
           <div className="flex-1 flex items-center justify-center">
             <div className="bg-white p-2 rounded-lg">
-              <QRCode 
+              <QRCodeSVG 
                 value={customerId || "preview"} 
                 size={120}
                 level="H"
