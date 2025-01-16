@@ -23,6 +23,7 @@ interface CardDesignerProps {
 export default function CardDesigner({ initialCard, onClose }: CardDesignerProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const [formData, setFormData] = useState({
     name: initialCard?.name || "",
@@ -59,50 +60,23 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     }
 
     try {
+      setIsProcessing(true);
       const reader = new FileReader();
-      const img = new Image();
 
-      reader.onload = (e) => {
-        img.src = e.target?.result as string;
-      };
-
-      img.onload = () => {
-        // Create a canvas to resize the image
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // Set maximum dimensions
-        const MAX_WIDTH = 200;
-        const MAX_HEIGHT = 200;
-
-        let width = img.width;
-        let height = img.height;
-
-        // Calculate new dimensions while maintaining aspect ratio
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        // Set canvas dimensions and draw resized image
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Get base64 string with reduced quality
-        const resizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+      reader.onload = async (e) => {
+        const base64 = e.target?.result as string;
         setFormData(prev => ({
           ...prev,
-          design: { ...prev.design, logo: resizedBase64 }
+          design: { ...prev.design, logo: base64 }
         }));
+      };
+
+      reader.onerror = () => {
+        toast({
+          title: "Error",
+          description: "Failed to read image file",
+          variant: "destructive",
+        });
       };
 
       reader.readAsDataURL(file);
@@ -112,6 +86,8 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
         description: "Failed to process image",
         variant: "destructive",
       });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -199,6 +175,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               accept="image/*"
               onChange={handleLogoUpload}
               className="cursor-pointer"
+              disabled={isProcessing}
             />
             {formData.design.logo && (
               <div className="mt-2">
@@ -206,6 +183,17 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
                   src={formData.design.logo} 
                   alt="Logo preview" 
                   className="w-16 h-16 object-contain border rounded"
+                  onError={() => {
+                    toast({
+                      title: "Error",
+                      description: "Failed to load image preview",
+                      variant: "destructive",
+                    });
+                    setFormData(prev => ({
+                      ...prev,
+                      design: { ...prev.design, logo: "" }
+                    }));
+                  }}
                 />
               </div>
             )}

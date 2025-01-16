@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { db } from "@db";
 import { businesses, branches, customers, loyaltyCards, notifications } from "@db/schema";
 import { eq, count, sql, desc, and } from "drizzle-orm";
+import { processImage, validateImage } from "./services/imageService";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -261,9 +262,14 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).json({ message: "Name and design are required" });
       }
 
-      // Ensure design object has required fields
-      if (!design.primaryColor || !design.backgroundColor) {
-        return res.status(400).json({ message: "Invalid design object" });
+      // Process logo if present
+      let processedDesign = { ...design };
+      if (design.logo) {
+        if (!validateImage(design.logo)) {
+          return res.status(400).json({ message: "Invalid image format or size" });
+        }
+        const processed = await processImage(design.logo);
+        processedDesign.logo = processed.data;
       }
 
       const newCard = await db
@@ -271,7 +277,7 @@ export function registerRoutes(app: Express): Server {
         .values({
           businessId,
           name,
-          design,
+          design: processedDesign,
           isActive: true,
         })
         .returning();
@@ -293,11 +299,21 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).json({ message: "Name and design are required" });
       }
 
+      // Process logo if changed
+      let processedDesign = { ...design };
+      if (design.logo) {
+        if (!validateImage(design.logo)) {
+          return res.status(400).json({ message: "Invalid image format or size" });
+        }
+        const processed = await processImage(design.logo);
+        processedDesign.logo = processed.data;
+      }
+
       const updatedCard = await db
         .update(loyaltyCards)
         .set({
           name,
-          design,
+          design: processedDesign,
         })
         .where(and(
           eq(loyaltyCards.id, cardId),
