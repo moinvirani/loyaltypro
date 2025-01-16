@@ -1,4 +1,5 @@
 import { Layout } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 interface CardDesign {
   name: string;
@@ -9,9 +10,13 @@ interface CardDesign {
 
 interface WalletPreviewProps {
   design: CardDesign;
+  cardId?: number;
 }
 
-export function WalletPreview({ design }: WalletPreviewProps) {
+export function WalletPreview({ design, cardId }: WalletPreviewProps) {
+  // Generate QR code value based on card ID
+  const qrValue = cardId ? `card-${cardId}` : 'preview';
+
   return (
     <div className="rounded-xl overflow-hidden shadow-lg max-w-sm mx-auto">
       {/* Header bar to simulate iOS wallet */}
@@ -54,16 +59,15 @@ export function WalletPreview({ design }: WalletPreviewProps) {
             <div className="text-2xl font-bold">0</div>
           </div>
 
-          {/* Barcode/QR placeholder */}
+          {/* QR Code */}
           <div className="mt-6 flex flex-col items-center gap-2">
-            <div 
-              className="w-48 h-48 border-2 rounded-lg flex items-center justify-center"
-              style={{ borderColor: design.primaryColor }}
-            >
-              <span className="text-sm" style={{ color: design.primaryColor }}>
-                QR Code
-              </span>
-            </div>
+            <QRCodeSVG 
+              value={qrValue}
+              size={180}
+              level="H"
+              fgColor={design.primaryColor}
+              className="bg-white p-2 rounded-lg"
+            />
             <div className="text-xs text-gray-500 text-center">
               Scan to check in or earn points
             </div>

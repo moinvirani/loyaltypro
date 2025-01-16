@@ -301,10 +301,16 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             </TabsTrigger>
           </TabsList>
           <TabsContent value="card">
-            <CardPreview design={{ ...formData.design, name: formData.name }} />
+            <CardPreview
+              design={{ ...formData.design, name: formData.name }}
+              cardId={initialCard?.id}
+            />
           </TabsContent>
           <TabsContent value="wallet">
-            <WalletPreview design={{ ...formData.design, name: formData.name }} />
+            <WalletPreview
+              design={{ ...formData.design, name: formData.name }}
+              cardId={initialCard?.id}
+            />
           </TabsContent>
         </Tabs>
       </div>

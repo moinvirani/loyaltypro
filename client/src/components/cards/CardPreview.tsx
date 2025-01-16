@@ -12,9 +12,13 @@ interface CardDesign {
 interface CardPreviewProps {
   design: CardDesign;
   customerId?: string;
+  cardId?: number;
 }
 
-export function CardPreview({ design, customerId }: CardPreviewProps) {
+export function CardPreview({ design, customerId, cardId }: CardPreviewProps) {
+  // Generate QR code value based on available IDs
+  const qrValue = customerId || (cardId ? `card-${cardId}` : 'preview');
+
   return (
     <div className="rounded-lg overflow-hidden shadow-lg">
       <div
@@ -50,17 +54,16 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
             ))}
           </div>
 
-          {customerId && (
-            <div className="flex items-center justify-center">
-              <div className="bg-white p-2 rounded-lg">
-                <QRCodeSVG 
-                  value={customerId}
-                  size={120}
-                  level="H"
-                />
-              </div>
+          <div className="flex items-center justify-center">
+            <div className="bg-white p-2 rounded-lg">
+              <QRCodeSVG 
+                value={qrValue}
+                size={120}
+                level="H"
+                fgColor={design.primaryColor}
+              />
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
