@@ -1,4 +1,3 @@
-
 import { Layout } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -21,7 +20,7 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
         style={{ background: design.backgroundColor }}
       >
         <div className="h-full flex flex-col">
-          <div className="flex items-center gap-2 mb-4" style={{ color: design.primaryColor }}>
+          <div className="flex items-center gap-2" style={{ color: design.primaryColor }}>
             {design.logo ? (
               <img src={design.logo} alt="Logo" className="h-8 w-8 object-contain" />
             ) : (

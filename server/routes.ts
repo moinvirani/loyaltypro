@@ -324,5 +324,74 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Customer wallet pass generation endpoint
+  app.get("/api/wallet-pass/:cardId/:customerId", async (req, res) => {
+    const cardId = parseInt(req.params.cardId);
+    const customerId = req.params.customerId;
+
+    try {
+      // Get card details
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.id, cardId),
+      });
+
+      if (!card) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+
+      // Create pass template
+      const template = new Template("storeCard", {
+        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+        teamIdentifier: process.env.APPLE_TEAM_ID,
+        organizationName: "Loyalty Pro",
+        description: card.name,
+        serialNumber: customerId,
+      });
+
+      // Set pass styling based on card design
+      template.style({
+        labelColor: "rgb(45, 45, 45)",
+        foregroundColor: "rgb(45, 45, 45)",
+        backgroundColor: card.design.backgroundColor,
+      });
+
+      // Add logo if exists
+      if (card.design.logo) {
+        template.images.add("icon", Buffer.from(card.design.logo, "base64"));
+        template.images.add("logo", Buffer.from(card.design.logo, "base64"));
+      }
+
+      // Set card information
+      template.primaryFields.add({
+        key: "points",
+        label: "Points",
+        value: 0,
+      });
+
+      // Add barcode
+      template.barcodes = [{
+        message: customerId,
+        format: "PKBarcodeFormatQR",
+        messageEncoding: "iso-8859-1",
+      }];
+
+      // Generate pass
+      const pass = await template.sign(
+        process.env.APPLE_SIGNING_CERT!,
+        process.env.APPLE_SIGNING_KEY!,
+      );
+
+      // Send pass file
+      res.set({
+        "Content-Type": "application/vnd.apple.pkpass",
+        "Content-disposition": `attachment; filename=${card.name}.pkpass`,
+      });
+      res.send(Buffer.from(await pass.getAsBuffer()));
+    } catch (error: any) {
+      console.error("Error generating pass:", error);
+      res.status(500).json({ message: "Failed to generate pass" });
+    }
+  });
+
   return httpServer;
 }

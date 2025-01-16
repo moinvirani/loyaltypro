@@ -111,6 +111,13 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     }
   };
 
+  // Generate a shareable URL for customers
+  const getShareableUrl = () => {
+    if (!initialCard) return null;
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/api/wallet-pass/${initialCard.id}/${Date.now()}`;
+  };
+
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       <div className="space-y-6">
@@ -211,6 +218,19 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               </Button>
             )}
           </div>
+
+          {initialCard && design.logo && (
+            <div className="mt-4">
+              <Label>Share with Customers</Label>
+              <CardPreview 
+                design={design} 
+                customerId={getShareableUrl()} 
+              />
+              <p className="text-sm text-muted-foreground mt-2 text-center">
+                Scan QR code to add to Apple Wallet
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
