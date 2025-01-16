@@ -374,7 +374,15 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      // Create pass template
+      // Debug certificate availability
+      console.log('Certificate check:');
+      console.log('Pass Type ID:', process.env.APPLE_PASS_TYPE_ID?.substring(0, 10) + '...');
+      console.log('Team ID:', process.env.APPLE_TEAM_ID?.substring(0, 5) + '...');
+      console.log('Has Signing Cert:', !!process.env.APPLE_SIGNING_CERT);
+      console.log('Has Signing Key:', !!process.env.APPLE_SIGNING_KEY);
+      console.log('Has WWDR Cert:', !!process.env.APPLE_WWDR_CERT);
+
+      // Create pass template with minimal required fields
       const template = new Template('storeCard', {
         formatVersion: 1,
         passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
@@ -384,50 +392,46 @@ export function registerRoutes(app: Express): Server {
         serialNumber: `card-${card.id}`,
       });
 
-      // Configure pass appearance
-      template.setCertificate(process.env.APPLE_SIGNING_CERT!);
-      template.setPrivateKey(process.env.APPLE_SIGNING_KEY!);
-      template.setWwdr(process.env.APPLE_WWDR_CERT!);
+      // Set certificates
+      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
+        throw new Error('Missing required certificates');
+      }
 
-      // Set background color (convert from hex to rgb if needed)
-      const bgColor = card.design.backgroundColor;
-      template.setBackgroundColor(bgColor);
-
-      // Set foreground color for text
-      const fgColor = card.design.primaryColor;
-      template.setForegroundColor(fgColor);
+      // Add basic styling
+      template.backgroundColor = card.design.backgroundColor;
+      template.foregroundColor = card.design.primaryColor;
 
       // Add logo if exists
       if (card.design.logo) {
         const logoData = card.design.logo.split(',')[1];
         const logoBuffer = Buffer.from(logoData, 'base64');
-        template.addBuffer('icon.png', logoBuffer);
-        template.addBuffer('logo.png', logoBuffer);
+        template.images.add('icon', logoBuffer);
+        template.images.add('logo', logoBuffer);
       }
 
-      // Add fields
-      template.addPrimaryField({
+      // Add primary fields
+      template.primaryFields.add({
         key: 'points',
         label: 'Points',
-        value: 0,
-      });
-
-      // Add header fields
-      template.addHeaderField({
-        key: 'status',
-        label: 'Status',
-        value: 'Active',
+        value: '0',
       });
 
       // Add barcode
-      template.setBarcodes({
+      template.barcodes = [{
         message: `card-${card.id}`,
         format: 'PKBarcodeFormatQR',
         messageEncoding: 'iso-8859-1',
-      });
+      }];
 
-      // Generate pass file
-      const passBuffer = await template.generate();
+      // Sign the pass
+      const signedPass = await template.sign(
+        Buffer.from(process.env.APPLE_SIGNING_CERT, 'base64'),
+        Buffer.from(process.env.APPLE_SIGNING_KEY, 'base64'),
+        Buffer.from(process.env.APPLE_WWDR_CERT, 'base64')
+      );
+
+      // Get the buffer
+      const buffer = await signedPass.getAsBuffer();
 
       // Send the pass file
       res.set({
@@ -435,13 +439,13 @@ export function registerRoutes(app: Express): Server {
         'Content-Disposition': `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
       });
 
-      res.send(passBuffer);
+      res.send(buffer);
 
     } catch (error: any) {
       console.error('Error generating pass:', error);
       res.status(500).json({ 
-        message: "Failed to generate pass", 
-        error: error.message 
+        message: "Failed to generate pass",
+        details: error.message
       });
     }
   });
