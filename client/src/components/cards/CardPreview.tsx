@@ -18,9 +18,9 @@ interface CardPreviewProps {
 export function CardPreview({ design, customerId, cardId }: CardPreviewProps) {
   // Generate QR code value based on available IDs
   const qrValue = customerId 
-    ? `https://${window.location.host}/api/wallet-pass/${cardId}/${customerId}`
+    ? `pkpass://passes.loyaltypro.app/customer/${cardId}/${customerId}`
     : cardId 
-      ? `https://${window.location.host}/api/cards/${cardId}/wallet-pass` 
+      ? `pkpass://passes.loyaltypro.app/preview/${cardId}` 
       : 'preview';
 
   return (
