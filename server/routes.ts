@@ -423,10 +423,15 @@ export function registerRoutes(app: Express): Server {
         messageEncoding: 'iso-8859-1',
       }];
 
-      // Add certificates to template
-      template.setCertificate(Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64'));
-      template.setPrivateKey(Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64'));
-      template.setWWDRcertificate(Buffer.from(process.env.APPLE_WWDR_CERT!, 'base64'));
+      // Format and add certificates to template
+      const formatPEM = (pemContent: string, type: string) => {
+        const base64 = Buffer.from(pemContent, 'base64').toString('utf-8');
+        return `-----BEGIN ${type}-----\n${base64}\n-----END ${type}-----`;
+      };
+
+      template.setCertificate(formatPEM(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE'));
+      template.setPrivateKey(formatPEM(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY'));
+      template.setWWDRcertificate(formatPEM(process.env.APPLE_WWDR_CERT!, 'CERTIFICATE'));
 
       // Generate the pass
       const buffer = await template.generate();
