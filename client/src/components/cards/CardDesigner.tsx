@@ -60,16 +60,51 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
 
     try {
       const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string;
+      const img = new Image();
+
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+
+      img.onload = () => {
+        // Create a canvas to resize the image
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        // Set maximum dimensions
+        const MAX_WIDTH = 200;
+        const MAX_HEIGHT = 200;
+
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate new dimensions while maintaining aspect ratio
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        // Set canvas dimensions and draw resized image
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Get base64 string with reduced quality
+        const resizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
         setFormData(prev => ({
           ...prev,
-          design: {
-            ...prev.design,
-            logo: base64
-          }
+          design: { ...prev.design, logo: resizedBase64 }
         }));
       };
+
       reader.readAsDataURL(file);
     } catch (error) {
       toast({
@@ -82,12 +117,31 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
 
   const saveCard = useMutation({
     mutationFn: async (data: typeof formData) => {
+      // Compress logo if it exists and is too large
+      let compressedData = { ...data };
+      if (data.design.logo && data.design.logo.length > 100000) {
+        const img = new Image();
+        img.src = data.design.logo;
+        await new Promise((resolve) => {
+          img.onload = resolve;
+        });
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error("Failed to get canvas context");
+
+        canvas.width = 200;
+        canvas.height = 200;
+        ctx.drawImage(img, 0, 0, 200, 200);
+        compressedData.design.logo = canvas.toDataURL('image/jpeg', 0.5);
+      }
+
       const res = await fetch(
         `/api/cards${initialCard ? `/${initialCard.id}` : ''}`,
         {
           method: initialCard ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
+          body: JSON.stringify(compressedData),
         }
       );
 

@@ -1,17 +1,56 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { PlusCircle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { PlusCircle, Trash2 } from "lucide-react";
 import CardDesigner from "@/components/cards/CardDesigner";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
 import type { LoyaltyCard } from "@db/schema";
 
 export default function CardDesignerPage() {
   const [selectedCard, setSelectedCard] = useState<LoyaltyCard | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: cards } = useQuery<LoyaltyCard[]>({
     queryKey: ["/api/cards"],
+  });
+
+  const deleteCard = useMutation({
+    mutationFn: async (cardId: number) => {
+      const res = await fetch(`/api/cards/${cardId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/cards'] });
+      toast({
+        title: "Success",
+        description: "Card deleted successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   return (
@@ -41,17 +80,50 @@ export default function CardDesignerPage() {
           {cards?.map((card) => (
             <Card 
               key={card.id}
-              className="cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={() => setSelectedCard(card)}
+              className="relative group"
             >
-              <CardHeader>
-                <CardTitle>{card.name}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-[1.586/1] rounded-lg border bg-card">
-                  {/* Card preview will be rendered here */}
-                </div>
-              </CardContent>
+              <div 
+                className="cursor-pointer"
+                onClick={() => setSelectedCard(card)}
+              >
+                <CardHeader>
+                  <CardTitle>{card.name}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="aspect-[1.586/1] rounded-lg border bg-card">
+                    {/* Card preview will be rendered here */}
+                  </div>
+                </CardContent>
+              </div>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Card</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete this card? This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => deleteCard.mutate(card.id)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </Card>
           ))}
         </div>
