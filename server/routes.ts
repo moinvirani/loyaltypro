@@ -5,6 +5,7 @@ import { businesses, branches, customers, loyaltyCards, notifications } from "@d
 import { eq, count, sql, desc, and } from "drizzle-orm";
 import { processImage, validateImage } from "./services/imageService";
 import { Template } from "@destinationstransfers/passkit";
+import { diagnosePassCertificates, formatPEM } from "./services/certificateService";
 
 // Utility function to format PEM content
 function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
@@ -401,6 +402,29 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Missing required certificates');
       }
 
+      // Format certificates
+      const signingCert = formatPEM(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE');
+      const signingKey = formatPEM(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY');
+      const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT!, 'CERTIFICATE');
+
+      // Diagnose certificates before attempting to generate pass
+      const { isValid, diagnostics } = diagnosePassCertificates(
+        signingCert,
+        signingKey,
+        wwdrCert
+      );
+
+      // Log diagnostics for debugging
+      console.log('Certificate Diagnostics:');
+      diagnostics.forEach(line => console.log(line));
+
+      if (!isValid) {
+        return res.status(500).json({
+          message: "Invalid certificates detected",
+          diagnostics
+        });
+      }
+
       // Create pass template
       const template = new Template('storeCard', {
         formatVersion: 1,
@@ -411,15 +435,10 @@ export function registerRoutes(app: Express): Server {
         serialNumber: `card-${card.id}`,
       });
 
-      // Format certificates properly
-      const signingCert = formatPEM(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE');
-      const signingKey = formatPEM(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY');
-      const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT!, 'CERTIFICATE');
-
       // Set certificates
       template.setCertificate(signingCert);
       template.setPrivateKey(signingKey);
-      template.setWWDRcertificate(wwdrCert); // WWDR certificate
+      template.setWWDRcertificate(wwdrCert);
 
       // Add basic styling
       template.backgroundColor = card.design.backgroundColor;
@@ -454,7 +473,6 @@ export function registerRoutes(app: Express): Server {
         wwdrCert,
       });
 
-      // Send the pass file
       res.set({
         'Content-Type': 'application/vnd.apple.pkpass',
         'Content-disposition': `attachment; filename=${card.name}.pkpass`,
