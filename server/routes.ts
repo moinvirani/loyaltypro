@@ -254,6 +254,59 @@ export function registerRoutes(app: Express): Server {
     res.json(cards);
   });
 
+  app.post("/api/cards", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const { name, design } = req.body;
+
+    try {
+      const newCard = await db
+        .insert(loyaltyCards)
+        .values({
+          businessId,
+          name,
+          design,
+          isActive: true,
+        })
+        .returning();
+
+      res.json(newCard[0]);
+    } catch (error) {
+      console.error("Error creating card:", error);
+      res.status(500).json({ message: "Failed to create card" });
+    }
+  });
+
+  app.put("/api/cards/:id", async (req, res) => {
+    const businessId = 1; // TODO: Get from auth
+    const cardId = parseInt(req.params.id);
+    const { name, design } = req.body;
+
+    try {
+      const updatedCard = await db
+        .update(loyaltyCards)
+        .set({
+          name,
+          design,
+        })
+        .where(
+          and(
+            eq(loyaltyCards.id, cardId),
+            eq(loyaltyCards.businessId, businessId)
+          )
+        )
+        .returning();
+
+      if (!updatedCard.length) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+
+      res.json(updatedCard[0]);
+    } catch (error) {
+      console.error("Error updating card:", error);
+      res.status(500).json({ message: "Failed to update card" });
+    }
+  });
+
   // Customers endpoints
   app.get("/api/customers", async (req, res) => {
     const businessId = 1; // TODO: Get from auth

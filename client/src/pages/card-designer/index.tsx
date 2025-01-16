@@ -8,7 +8,8 @@ import type { LoyaltyCard } from "@db/schema";
 
 export default function CardDesignerPage() {
   const [selectedCard, setSelectedCard] = useState<LoyaltyCard | null>(null);
-  
+  const [isCreating, setIsCreating] = useState(false);
+
   const { data: cards } = useQuery<LoyaltyCard[]>({
     queryKey: ["/api/cards"],
   });
@@ -22,13 +23,20 @@ export default function CardDesignerPage() {
             Create and manage your loyalty cards
           </p>
         </div>
-        <Button onClick={() => setSelectedCard(null)}>
+        <Button onClick={() => setIsCreating(true)}>
           <PlusCircle className="mr-2 h-4 w-4" />
           New Card
         </Button>
       </div>
 
-      {selectedCard === null ? (
+      {isCreating ? (
+        <CardDesigner onClose={() => setIsCreating(false)} />
+      ) : selectedCard ? (
+        <CardDesigner 
+          initialCard={selectedCard} 
+          onClose={() => setSelectedCard(null)}
+        />
+      ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {cards?.map((card) => (
             <Card 
@@ -47,11 +55,6 @@ export default function CardDesignerPage() {
             </Card>
           ))}
         </div>
-      ) : (
-        <CardDesigner 
-          initialCard={selectedCard} 
-          onClose={() => setSelectedCard(null)}
-        />
       )}
     </div>
   );

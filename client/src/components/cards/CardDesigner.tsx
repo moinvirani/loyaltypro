@@ -48,24 +48,40 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       const res = await fetch(`/api/cards${initialCard ? `/${initialCard.id}` : ''}`, {
         method: initialCard ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cardData),
+        body: JSON.stringify({
+          name: cardData.name,
+          design: {
+            primaryColor: cardData.primaryColor,
+            backgroundColor: cardData.backgroundColor,
+            logo: cardData.logo,
+            stamps: cardData.stamps
+          },
+          isActive: true
+        }),
       });
 
-      if (!res.ok) throw new Error('Failed to save card');
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(error);
+      }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/cards'] });
+      if (!initialCard) {
+        // If this was a new card, update the URL and state to show the QR code
+        window.history.replaceState(null, '', `/cards/${data.id}`);
+      }
       toast({
         title: "Success",
         description: `Card ${initialCard ? 'updated' : 'created'} successfully`,
       });
       onClose();
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to save card",
+        description: error.message,
         variant: "destructive",
       });
     },
@@ -137,6 +153,18 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               id="name"
               value={design.name}
               onChange={(e) => setDesign(d => ({ ...d, name: e.target.value }))}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="logo">Business Logo</Label>
+            <Input
+              id="logo"
+              type="file"
+              accept="image/*"
+              onChange={handleLogoUpload}
+              className="cursor-pointer"
             />
           </div>
 
@@ -175,17 +203,6 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
           </div>
 
           <div>
-            <Label htmlFor="logo">Business Logo</Label>
-            <Input
-              id="logo"
-              type="file"
-              accept="image/*"
-              onChange={handleLogoUpload}
-              className="cursor-pointer"
-            />
-          </div>
-
-          <div>
             <Label htmlFor="stamps">Number of Stamps</Label>
             <Input
               id="stamps"
@@ -201,7 +218,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             <Button 
               className="flex-1"
               onClick={() => saveCard.mutate(design)}
-              disabled={saveCard.isPending}
+              disabled={saveCard.isPending || !design.name}
             >
               <Save className="mr-2 h-4 w-4" />
               Save Card
