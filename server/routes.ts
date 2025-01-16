@@ -4,8 +4,6 @@ import { db } from "@db";
 import { businesses, branches, customers, loyaltyCards, notifications } from "@db/schema";
 import { eq, count, sql, desc, and } from "drizzle-orm";
 import { Template } from "@destinationstransfers/passkit";
-import fs from "fs/promises";
-import path from "path";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -255,10 +253,14 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/cards", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
-    const { name, design } = req.body;
-
     try {
+      const businessId = 1; // TODO: Get from auth
+      const { name, design } = req.body;
+
+      if (!name || !design) {
+        return res.status(400).json({ message: "Name and design are required" });
+      }
+
       const newCard = await db
         .insert(loyaltyCards)
         .values({
@@ -277,11 +279,15 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.put("/api/cards/:id", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
-    const cardId = parseInt(req.params.id);
-    const { name, design } = req.body;
-
     try {
+      const businessId = 1; // TODO: Get from auth
+      const cardId = parseInt(req.params.id);
+      const { name, design } = req.body;
+
+      if (!name || !design) {
+        return res.status(400).json({ message: "Name and design are required" });
+      }
+
       const updatedCard = await db
         .update(loyaltyCards)
         .set({
@@ -304,6 +310,70 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error updating card:", error);
       res.status(500).json({ message: "Failed to update card" });
+    }
+  });
+
+  // Generate wallet pass for existing card
+  app.post("/api/cards/:id/wallet-pass", async (req, res) => {
+    try {
+      const businessId = 1; // TODO: Get from auth
+      const cardId = parseInt(req.params.id);
+
+      const card = await db.query.loyaltyCards.findFirst({
+        where: and(
+          eq(loyaltyCards.id, cardId),
+          eq(loyaltyCards.businessId, businessId)
+        ),
+      });
+
+      if (!card) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+
+      const template = new Template("storeCard", {
+        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+        teamIdentifier: process.env.APPLE_TEAM_ID,
+        organizationName: "Loyalty Pro",
+        description: card.name,
+      });
+
+      // Set pass styling
+      template.style = {
+        labelColor: "rgb(45, 45, 45)",
+        foregroundColor: "rgb(45, 45, 45)",
+        backgroundColor: card.design.backgroundColor,
+      };
+
+      // Add logo if exists
+      if (card.design.logo) {
+        template.images.add("icon", Buffer.from(card.design.logo, "base64"));
+        template.images.add("logo", Buffer.from(card.design.logo, "base64"));
+      }
+
+      // Set card information
+      template.primaryFields.add({
+        key: "points",
+        label: "Points",
+        value: 0,
+      });
+
+      // Convert base64 cert and key strings to buffers
+      const signingCert = Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64');
+      const signingKey = Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64');
+
+      const pass = await template.sign(signingCert, signingKey);
+
+      // Send pass file
+      res.set({
+        "Content-Type": "application/vnd.apple.pkpass",
+        "Content-disposition": `attachment; filename=${card.name}.pkpass`,
+      });
+
+      const buffer = await pass.getAsBuffer();
+      res.send(buffer);
+    } catch (error: any) {
+      console.error("Error generating pass:", error);
+      res.status(500).json({ message: "Failed to generate pass" });
     }
   });
 
