@@ -29,7 +29,19 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     primaryColor: "#000000",
     backgroundColor: "#ffffff",
     logo: initialCard?.design?.logo || "",
+    stamps: 5,
   });
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setDesign(d => ({ ...d, logo: e.target?.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const saveCard = useMutation({
     mutationFn: async (cardData: typeof design) => {
@@ -153,6 +165,29 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
                 onChange={(e) => setDesign(d => ({ ...d, backgroundColor: e.target.value }))}
               />
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="logo">Business Logo</Label>
+            <Input
+              id="logo"
+              type="file"
+              accept="image/*"
+              onChange={handleLogoUpload}
+              className="cursor-pointer"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="stamps">Number of Stamps</Label>
+            <Input
+              id="stamps"
+              type="number"
+              min="1"
+              max="10"
+              value={design.stamps}
+              onChange={(e) => setDesign(d => ({ ...d, stamps: parseInt(e.target.value) || 5 }))}
+            />
           </div>
 
           <div className="flex gap-2">

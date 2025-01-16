@@ -1,4 +1,6 @@
+
 import { Layout } from "lucide-react";
+import QRCode from "qrcode.react";
 
 interface CardPreviewProps {
   design: {
@@ -6,10 +8,12 @@ interface CardPreviewProps {
     primaryColor: string;
     backgroundColor: string;
     logo?: string;
+    stamps?: number;
   };
+  customerId?: string;
 }
 
-export function CardPreview({ design }: CardPreviewProps) {
+export function CardPreview({ design, customerId }: CardPreviewProps) {
   return (
     <div className="rounded-lg overflow-hidden shadow-lg">
       <div
@@ -19,21 +23,31 @@ export function CardPreview({ design }: CardPreviewProps) {
         <div className="h-full flex flex-col">
           <div className="flex items-center gap-2 mb-4" style={{ color: design.primaryColor }}>
             {design.logo ? (
-              <img src={design.logo} alt="Logo" className="h-8 w-8" />
+              <img src={design.logo} alt="Logo" className="h-8 w-8 object-contain" />
             ) : (
               <Layout className="h-8 w-8" />
             )}
             <span className="font-bold text-lg">{design.name || "Card Name"}</span>
           </div>
 
+          <div className="flex justify-center gap-4 mb-6">
+            {Array.from({ length: design.stamps || 5 }).map((_, i) => (
+              <div
+                key={i}
+                className="w-10 h-10 rounded-full border-2"
+                style={{ borderColor: design.primaryColor }}
+              />
+            ))}
+          </div>
+
           <div className="flex-1 flex items-center justify-center">
-            <div
-              className="w-48 h-48 rounded-lg border-2 flex items-center justify-center"
-              style={{ borderColor: design.primaryColor }}
-            >
-              <span className="text-sm" style={{ color: design.primaryColor }}>
-                QR Code Placeholder
-              </span>
+            <div className="bg-white p-2 rounded-lg">
+              <QRCode 
+                value={customerId || "preview"} 
+                size={120}
+                level="H"
+                includeMargin={false}
+              />
             </div>
           </div>
 
