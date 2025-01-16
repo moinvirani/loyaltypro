@@ -423,15 +423,13 @@ export function registerRoutes(app: Express): Server {
         messageEncoding: 'iso-8859-1',
       }];
 
-      // Sign the pass
-      const signedPass = await template.sign(
-        Buffer.from(process.env.APPLE_SIGNING_CERT, 'base64'),
-        Buffer.from(process.env.APPLE_SIGNING_KEY, 'base64'),
-        Buffer.from(process.env.APPLE_WWDR_CERT, 'base64')
-      );
+      // Add certificates to template
+      template.setCertificate(Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64'));
+      template.setPrivateKey(Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64'));
+      template.setWWDRcertificate(Buffer.from(process.env.APPLE_WWDR_CERT!, 'base64'));
 
-      // Get the buffer
-      const buffer = await signedPass.getAsBuffer();
+      // Generate the pass
+      const buffer = await template.generate();
 
       // Send the pass file
       res.set({
