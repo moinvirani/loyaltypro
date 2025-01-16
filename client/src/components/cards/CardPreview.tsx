@@ -37,7 +37,7 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
             <span className="font-bold text-lg">{design.name || "Card Name"}</span>
           </div>
 
-          <div className="flex justify-center gap-4 mb-6">
+          <div className="flex-1 flex justify-center gap-4 my-6">
             {Array.from({ length: design.stamps || 5 }).map((_, i) => (
               <div
                 key={i}
@@ -48,7 +48,7 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
           </div>
 
           {customerId && (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex items-center justify-center">
               <div className="bg-white p-2 rounded-lg">
                 <QRCodeSVG 
                   value={customerId}

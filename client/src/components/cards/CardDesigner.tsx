@@ -26,10 +26,10 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
 
   const [design, setDesign] = useState({
     name: initialCard?.name || "",
-    primaryColor: "#000000",
-    backgroundColor: "#ffffff",
+    primaryColor: initialCard?.design?.primaryColor || "#000000",
+    backgroundColor: initialCard?.design?.backgroundColor || "#ffffff",
     logo: initialCard?.design?.logo || "",
-    stamps: 5,
+    stamps: initialCard?.design?.stamps || 5,
   });
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,46 +154,6 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     },
   });
 
-  const generateWalletPass = async () => {
-    if (!initialCard) {
-      toast({
-        title: "Error",
-        description: "Please save the card first",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/cards/${initialCard.id}/wallet-pass`, {
-        method: 'POST',
-      });
-
-      if (!res.ok) throw new Error('Failed to generate pass');
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${design.name}.pkpass`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast({
-        title: "Success",
-        description: "Wallet pass generated successfully",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to generate wallet pass",
-        variant: "destructive",
-      });
-    }
-  };
-
   // Generate a shareable URL for customers
   const getShareableUrl = () => {
     if (!initialCard) return null;
@@ -214,7 +174,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
         </div>
 
         <div className="space-y-4">
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="name">Card Name</Label>
             <Input
               id="name"
@@ -224,7 +184,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             />
           </div>
 
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="logo">Business Logo</Label>
             <Input
               id="logo"
@@ -233,9 +193,18 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               onChange={handleLogoUpload}
               className="cursor-pointer"
             />
+            {design.logo && (
+              <div className="mt-2">
+                <img 
+                  src={design.logo} 
+                  alt="Logo preview" 
+                  className="w-16 h-16 object-contain border rounded"
+                />
+              </div>
+            )}
           </div>
 
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="primaryColor">Primary Color</Label>
             <div className="flex gap-2">
               <Input
@@ -252,7 +221,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             </div>
           </div>
 
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="backgroundColor">Background Color</Label>
             <div className="flex gap-2">
               <Input
@@ -269,7 +238,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             </div>
           </div>
 
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="stamps">Number of Stamps</Label>
             <Input
               id="stamps"
