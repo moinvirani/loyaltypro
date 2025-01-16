@@ -118,7 +118,7 @@ export function registerRoutes(app: Express): Server {
           .from(customers)
           .where(
             sql`${customers.businessId} = ${businessId} 
-                ${days 
+                ${days
                   ? sql`AND ${customers.createdAt} >= NOW() - INTERVAL '${days} days'`
                   : sql`AND ${customers.createdAt} < NOW() - INTERVAL '180 days'`
                 }`
@@ -261,6 +261,11 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).json({ message: "Name and design are required" });
       }
 
+      // Ensure design object has required fields
+      if (!design.primaryColor || !design.backgroundColor) {
+        return res.status(400).json({ message: "Invalid design object" });
+      }
+
       const newCard = await db
         .insert(loyaltyCards)
         .values({
@@ -272,7 +277,7 @@ export function registerRoutes(app: Express): Server {
         .returning();
 
       res.json(newCard[0]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating card:", error);
       res.status(500).json({ message: "Failed to create card" });
     }
@@ -286,6 +291,11 @@ export function registerRoutes(app: Express): Server {
 
       if (!name || !design) {
         return res.status(400).json({ message: "Name and design are required" });
+      }
+
+      // Ensure design object has required fields
+      if (!design.primaryColor || !design.backgroundColor) {
+        return res.status(400).json({ message: "Invalid design object" });
       }
 
       const updatedCard = await db
@@ -307,7 +317,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       res.json(updatedCard[0]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating card:", error);
       res.status(500).json({ message: "Failed to update card" });
     }

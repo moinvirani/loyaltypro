@@ -1,6 +1,17 @@
 import { pgTable, text, serial, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+import { z } from 'zod';
+
+// Define the design schema
+export const designSchema = z.object({
+  primaryColor: z.string(),
+  backgroundColor: z.string(),
+  logo: z.string().optional(),
+  stamps: z.number().optional(),
+});
+
+export type Design = z.infer<typeof designSchema>;
 
 export const businesses = pgTable("businesses", {
   id: serial("id").primaryKey(),
@@ -23,7 +34,7 @@ export const loyaltyCards = pgTable("loyalty_cards", {
   id: serial("id").primaryKey(),
   businessId: integer("business_id").references(() => businesses.id),
   name: text("name").notNull(),
-  design: jsonb("design").notNull(),
+  design: jsonb("design").$type<Design>().notNull(),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });

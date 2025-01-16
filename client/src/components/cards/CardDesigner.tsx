@@ -20,16 +20,30 @@ interface CardDesignerProps {
   onClose: () => void;
 }
 
+interface CardDesign {
+  primaryColor: string;
+  backgroundColor: string;
+  logo?: string;
+  stamps: number;
+}
+
+interface CardData {
+  name: string;
+  design: CardDesign;
+}
+
 export default function CardDesigner({ initialCard, onClose }: CardDesignerProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [design, setDesign] = useState({
+  const [formData, setFormData] = useState<CardData>({
     name: initialCard?.name || "",
-    primaryColor: initialCard?.design?.primaryColor || "#000000",
-    backgroundColor: initialCard?.design?.backgroundColor || "#ffffff",
-    logo: initialCard?.design?.logo || "",
-    stamps: initialCard?.design?.stamps || 5,
+    design: {
+      primaryColor: initialCard?.design?.primaryColor || "#000000",
+      backgroundColor: initialCard?.design?.backgroundColor || "#ffffff",
+      logo: initialCard?.design?.logo || "",
+      stamps: initialCard?.design?.stamps || 5,
+    },
   });
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -69,6 +83,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
         // Create a canvas to resize the image
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
+        if (!ctx) return;
 
         // Set maximum dimensions
         const MAX_WIDTH = 400;
@@ -93,11 +108,14 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
         // Set canvas dimensions and draw resized image
         canvas.width = width;
         canvas.height = height;
-        ctx?.drawImage(img, 0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
 
         // Get base64 string with reduced quality
         const resizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-        setDesign(d => ({ ...d, logo: resizedBase64 }));
+        setFormData(prev => ({
+          ...prev,
+          design: { ...prev.design, logo: resizedBase64 }
+        }));
       };
 
       reader.readAsDataURL(file);
@@ -111,21 +129,15 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
   };
 
   const saveCard = useMutation({
-    mutationFn: async (data: typeof design) => {
-      const res = await fetch(`/api/cards${initialCard ? `/${initialCard.id}` : ''}`, {
-        method: initialCard ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: data.name,
-          design: {
-            primaryColor: data.primaryColor,
-            backgroundColor: data.backgroundColor,
-            logo: data.logo,
-            stamps: data.stamps
-          },
-          isActive: true
-        }),
-      });
+    mutationFn: async (data: CardData) => {
+      const res = await fetch(
+        `/api/cards${initialCard ? `/${initialCard.id}` : ''}`,
+        {
+          method: initialCard ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        }
+      );
 
       if (!res.ok) {
         const error = await res.text();
@@ -150,13 +162,6 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     },
   });
 
-  // Generate a shareable URL for customers
-  const getShareableUrl = () => {
-    if (!initialCard) return null;
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/api/wallet-pass/${initialCard.id}/${Date.now()}`;
-  };
-
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       <div className="space-y-6">
@@ -174,8 +179,8 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             <Label htmlFor="name">Card Name</Label>
             <Input
               id="name"
-              value={design.name}
-              onChange={(e) => setDesign(d => ({ ...d, name: e.target.value }))}
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
               required
             />
           </div>
@@ -189,10 +194,10 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               onChange={handleLogoUpload}
               className="cursor-pointer"
             />
-            {design.logo && (
+            {formData.design.logo && (
               <div className="mt-2">
                 <img 
-                  src={design.logo} 
+                  src={formData.design.logo} 
                   alt="Logo preview" 
                   className="w-16 h-16 object-contain border rounded"
                 />
@@ -206,13 +211,19 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               <Input
                 id="primaryColor"
                 type="color"
-                value={design.primaryColor}
-                onChange={(e) => setDesign(d => ({ ...d, primaryColor: e.target.value }))}
+                value={formData.design.primaryColor}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, primaryColor: e.target.value }
+                }))}
                 className="w-20"
               />
               <Input
-                value={design.primaryColor}
-                onChange={(e) => setDesign(d => ({ ...d, primaryColor: e.target.value }))}
+                value={formData.design.primaryColor}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, primaryColor: e.target.value }
+                }))}
               />
             </div>
           </div>
@@ -223,13 +234,19 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               <Input
                 id="backgroundColor"
                 type="color"
-                value={design.backgroundColor}
-                onChange={(e) => setDesign(d => ({ ...d, backgroundColor: e.target.value }))}
+                value={formData.design.backgroundColor}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, backgroundColor: e.target.value }
+                }))}
                 className="w-20"
               />
               <Input
-                value={design.backgroundColor}
-                onChange={(e) => setDesign(d => ({ ...d, backgroundColor: e.target.value }))}
+                value={formData.design.backgroundColor}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, backgroundColor: e.target.value }
+                }))}
               />
             </div>
           </div>
@@ -241,34 +258,22 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               type="number"
               min="1"
               max="10"
-              value={design.stamps}
-              onChange={(e) => setDesign(d => ({ ...d, stamps: parseInt(e.target.value) || 5 }))}
+              value={formData.design.stamps}
+              onChange={(e) => setFormData(prev => ({
+                ...prev,
+                design: { ...prev.design, stamps: parseInt(e.target.value) || 5 }
+              }))}
             />
           </div>
 
-          <div className="flex gap-2">
-            <Button
-              className="flex-1"
-              onClick={() => saveCard.mutate(design)}
-              disabled={saveCard.isPending || !design.name}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              Save Card
-            </Button>
-          </div>
-
-          {initialCard && design.logo && (
-            <div className="mt-4">
-              <Label>Share with Customers</Label>
-              <CardPreview
-                design={design}
-                customerId={getShareableUrl()}
-              />
-              <p className="text-sm text-muted-foreground mt-2 text-center">
-                Scan QR code to add to Apple Wallet
-              </p>
-            </div>
-          )}
+          <Button
+            className="w-full"
+            onClick={() => saveCard.mutate(formData)}
+            disabled={saveCard.isPending || !formData.name}
+          >
+            <Save className="mr-2 h-4 w-4" />
+            Save Card
+          </Button>
         </div>
       </div>
 
@@ -285,10 +290,10 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             </TabsTrigger>
           </TabsList>
           <TabsContent value="card">
-            <CardPreview design={design} />
+            <CardPreview design={formData.design} />
           </TabsContent>
           <TabsContent value="wallet">
-            <WalletPreview design={design} />
+            <WalletPreview design={formData.design} />
           </TabsContent>
         </Tabs>
       </div>
