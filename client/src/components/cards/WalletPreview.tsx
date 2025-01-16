@@ -1,12 +1,14 @@
 import { Layout } from "lucide-react";
 
+interface CardDesign {
+  name: string;
+  primaryColor: string;
+  backgroundColor: string;
+  logo?: string;
+}
+
 interface WalletPreviewProps {
-  design: {
-    name: string;
-    primaryColor: string;
-    backgroundColor: string;
-    logo?: string;
-  };
+  design: CardDesign;
 }
 
 export function WalletPreview({ design }: WalletPreviewProps) {
@@ -17,19 +19,28 @@ export function WalletPreview({ design }: WalletPreviewProps) {
         <span>Pass Preview</span>
         <span className="text-xs opacity-75">Wallet</span>
       </div>
-      
+
       {/* Pass content */}
       <div className="bg-white">
         {/* Pass header */}
         <div className="p-4 border-b" style={{ background: design.backgroundColor }}>
           <div className="flex items-center gap-2" style={{ color: design.primaryColor }}>
             {design.logo ? (
-              <img src={design.logo} alt="Logo" className="h-8 w-8 rounded" />
+              <img 
+                src={design.logo} 
+                alt="Logo" 
+                className="h-8 w-8 object-contain"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  console.error('Failed to load logo');
+                }}
+              />
             ) : (
               <Layout className="h-8 w-8" />
             )}
             <div>
-              <h3 className="font-semibold">{design.name}</h3>
+              <h3 className="font-semibold">{design.name || "Card Name"}</h3>
               <p className="text-xs opacity-75">Loyalty Card</p>
             </div>
           </div>
@@ -40,7 +51,7 @@ export function WalletPreview({ design }: WalletPreviewProps) {
           {/* Points balance */}
           <div className="mb-4">
             <div className="text-sm text-gray-600">POINTS BALANCE</div>
-            <div className="text-3xl font-bold">0</div>
+            <div className="text-2xl font-bold">0</div>
           </div>
 
           {/* Barcode/QR placeholder */}

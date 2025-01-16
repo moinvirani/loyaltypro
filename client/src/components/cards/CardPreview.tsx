@@ -1,14 +1,16 @@
 import { Layout } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
+interface CardDesign {
+  name: string;
+  primaryColor: string;
+  backgroundColor: string;
+  logo?: string;
+  stamps?: number;
+}
+
 interface CardPreviewProps {
-  design: {
-    name: string;
-    primaryColor: string;
-    backgroundColor: string;
-    logo?: string;
-    stamps?: number;
-  };
+  design: CardDesign;
   customerId?: string;
 }
 
@@ -25,9 +27,10 @@ export function CardPreview({ design, customerId }: CardPreviewProps) {
               <img 
                 src={design.logo} 
                 alt="Logo" 
-                className="h-8 w-8 object-contain" 
+                className="h-8 w-8 object-contain"
                 onError={(e) => {
-                  e.currentTarget.style.display = 'none';
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
                   console.error('Failed to load logo');
                 }}
               />
