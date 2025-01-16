@@ -35,7 +35,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     }
   });
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) {
       console.log("No file selected");
@@ -62,33 +62,29 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       return;
     }
 
-    setIsProcessing(true);
-    console.log("Processing image:", file.name, file.type, file.size);
+    try {
+      setIsProcessing(true);
+      console.log("Processing image:", file.name, file.type, file.size);
 
-    const reader = new FileReader();
-
-    reader.addEventListener('load', () => {
-      console.log("Image loaded successfully");
-      if (typeof reader.result === 'string') {
+      const reader = new FileReader();
+      reader.onload = () => {
+        console.log("Image loaded successfully");
+        const base64 = reader.result as string;
         setFormData(prev => ({
           ...prev,
-          design: { ...prev.design, logo: reader.result }
+          design: { ...prev.design, logo: base64 }
         }));
-      }
-      setIsProcessing(false);
-    });
+      };
 
-    reader.addEventListener('error', () => {
-      console.error("FileReader error:", reader.error);
-      toast({
-        title: "Error",
-        description: "Failed to read image file",
-        variant: "destructive",
-      });
-      setIsProcessing(false);
-    });
+      reader.onerror = (error) => {
+        console.error("FileReader error:", error);
+        toast({
+          title: "Error",
+          description: "Failed to read image file",
+          variant: "destructive",
+        });
+      };
 
-    try {
       reader.readAsDataURL(file);
     } catch (error) {
       console.error("Image processing error:", error);
@@ -97,6 +93,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
         description: "Failed to process image",
         variant: "destructive",
       });
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -107,7 +104,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
         ...data,
         design: {
           ...data.design,
-          logo: data.design.logo ? "[base64_data]" : null
+          logo: data.design.logo ? "base64_data" : null
         }
       });
 
