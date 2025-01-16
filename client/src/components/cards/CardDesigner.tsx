@@ -113,6 +113,54 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     },
   });
 
+  const generateWalletPass = async () => {
+    if (!initialCard) {
+      toast({
+        title: "Error",
+        description: "Please save the card first before generating a wallet pass",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const response = await fetch(`/api/cards/${initialCard.id}/wallet-pass`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to generate wallet pass');
+      }
+
+      // Create blob from response and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${formData.name.replace(/\s+/g, '_')}.pkpass`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "Success",
+        description: "Wallet pass generated successfully. Please check your downloads.",
+      });
+    } catch (error: any) {
+      console.error('Wallet pass generation error:', error);
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       <div className="space-y-6">
@@ -147,9 +195,9 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             />
             {formData.design.logo && (
               <div className="mt-2">
-                <img 
-                  src={formData.design.logo} 
-                  alt="Logo preview" 
+                <img
+                  src={formData.design.logo}
+                  alt="Logo preview"
                   className="w-16 h-16 object-contain border rounded"
                 />
               </div>
@@ -225,6 +273,18 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             <Save className="mr-2 h-4 w-4" />
             Save Card
           </Button>
+
+          {initialCard && (
+            <Button
+              className="w-full mt-2"
+              variant="outline"
+              onClick={generateWalletPass}
+              disabled={isLoading}
+            >
+              <Wallet className="mr-2 h-4 w-4" />
+              Generate Wallet Pass
+            </Button>
+          )}
         </div>
       </div>
 

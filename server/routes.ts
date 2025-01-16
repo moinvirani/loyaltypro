@@ -4,6 +4,7 @@ import { db } from "@db";
 import { businesses, branches, customers, loyaltyCards, notifications } from "@db/schema";
 import { eq, count, sql, desc, and } from "drizzle-orm";
 import { processImage, validateImage } from "./services/imageService";
+import { Template } from "@destinationstransfers/passkit";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -373,50 +374,75 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      const template = new Template("storeCard", {
+      // Create pass template
+      const template = new Template('storeCard', {
+        formatVersion: 1,
         passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
         teamIdentifier: process.env.APPLE_TEAM_ID,
         organizationName: "Loyalty Pro",
         description: card.name,
+        serialNumber: `card-${card.id}`,
       });
 
-      // Set pass styling
-      template.style = {
-        labelColor: "rgb(45, 45, 45)",
-        foregroundColor: "rgb(45, 45, 45)",
-        backgroundColor: card.design.backgroundColor,
-      };
+      // Configure pass appearance
+      template.setCertificate(process.env.APPLE_SIGNING_CERT!);
+      template.setPrivateKey(process.env.APPLE_SIGNING_KEY!);
+      template.setWwdr(process.env.APPLE_WWDR_CERT!);
+
+      // Set background color (convert from hex to rgb if needed)
+      const bgColor = card.design.backgroundColor;
+      template.setBackgroundColor(bgColor);
+
+      // Set foreground color for text
+      const fgColor = card.design.primaryColor;
+      template.setForegroundColor(fgColor);
 
       // Add logo if exists
       if (card.design.logo) {
-        template.images.add("icon", Buffer.from(card.design.logo, "base64"));
-        template.images.add("logo", Buffer.from(card.design.logo, "base64"));
+        const logoData = card.design.logo.split(',')[1];
+        const logoBuffer = Buffer.from(logoData, 'base64');
+        template.addBuffer('icon.png', logoBuffer);
+        template.addBuffer('logo.png', logoBuffer);
       }
 
-      // Set card information
-      template.primaryFields.add({
-        key: "points",
-        label: "Points",
+      // Add fields
+      template.addPrimaryField({
+        key: 'points',
+        label: 'Points',
         value: 0,
       });
 
-      // Convert base64 cert and key strings to buffers
-      const signingCert = Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64');
-      const signingKey = Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64');
-
-      const pass = await template.sign(signingCert, signingKey);
-
-      // Send pass file
-      res.set({
-        "Content-Type": "application/vnd.apple.pkpass",
-        "Content-disposition": `attachment; filename=${card.name}.pkpass`,
+      // Add header fields
+      template.addHeaderField({
+        key: 'status',
+        label: 'Status',
+        value: 'Active',
       });
 
-      const buffer = await pass.getAsBuffer();
-      res.send(buffer);
+      // Add barcode
+      template.setBarcodes({
+        message: `card-${card.id}`,
+        format: 'PKBarcodeFormatQR',
+        messageEncoding: 'iso-8859-1',
+      });
+
+      // Generate pass file
+      const passBuffer = await template.generate();
+
+      // Send the pass file
+      res.set({
+        'Content-Type': 'application/vnd.apple.pkpass',
+        'Content-Disposition': `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
+      });
+
+      res.send(passBuffer);
+
     } catch (error: any) {
-      console.error("Error generating pass:", error);
-      res.status(500).json({ message: "Failed to generate pass" });
+      console.error('Error generating pass:', error);
+      res.status(500).json({ 
+        message: "Failed to generate pass", 
+        error: error.message 
+      });
     }
   });
 
@@ -430,8 +456,6 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Apple Wallet pass generation (duplicate route - removed)
-
-
   // Customer wallet pass generation endpoint
   app.get("/api/wallet-pass/:cardId/:customerId", async (req, res) => {
     const cardId = parseInt(req.params.cardId);
