@@ -322,6 +322,12 @@ export function registerRoutes(app: Express): Server {
     const cardId = parseInt(req.params.id);
 
     try {
+      // Debug environment variables
+      console.log('Pass Type ID:', process.env.APPLE_PASS_TYPE_ID?.substring(0, 10) + '...');
+      console.log('Team ID:', process.env.APPLE_TEAM_ID?.substring(0, 5) + '...');
+      console.log('Has Signing Cert:', !!process.env.APPLE_SIGNING_CERT);
+      console.log('Has Signing Key:', !!process.env.APPLE_SIGNING_KEY);
+
       // Get card details
       const card = await db.query.loyaltyCards.findFirst({
         where: eq(loyaltyCards.id, cardId),
@@ -359,10 +365,13 @@ export function registerRoutes(app: Express): Server {
         value: 0,
       });
 
-      // Generate pass
+      // Convert base64 cert and key strings to buffers
+      const signingCert = Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64');
+      const signingKey = Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64');
+
       const pass = await template.sign(
-        process.env.APPLE_SIGNING_CERT!,
-        process.env.APPLE_SIGNING_KEY!,
+        signingCert,
+        signingKey,
       );
 
       // Send pass file
@@ -383,6 +392,12 @@ export function registerRoutes(app: Express): Server {
     const customerId = req.params.customerId;
 
     try {
+      // Debug environment variables
+      console.log('Pass Type ID:', process.env.APPLE_PASS_TYPE_ID?.substring(0, 10) + '...');
+      console.log('Team ID:', process.env.APPLE_TEAM_ID?.substring(0, 5) + '...');
+      console.log('Has Signing Cert:', !!process.env.APPLE_SIGNING_CERT);
+      console.log('Has Signing Key:', !!process.env.APPLE_SIGNING_KEY);
+
       // Get card details
       const card = await db.query.loyaltyCards.findFirst({
         where: eq(loyaltyCards.id, cardId),
@@ -428,10 +443,13 @@ export function registerRoutes(app: Express): Server {
         messageEncoding: "iso-8859-1",
       }];
 
-      // Generate pass
+      // Convert base64 cert and key strings to buffers
+      const signingCert = Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64');
+      const signingKey = Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64');
+
       const pass = await template.sign(
-        process.env.APPLE_SIGNING_CERT!,
-        process.env.APPLE_SIGNING_KEY!,
+        signingCert,
+        signingKey,
       );
 
       // Send pass file
