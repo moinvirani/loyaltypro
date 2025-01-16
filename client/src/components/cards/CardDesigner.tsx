@@ -133,12 +133,8 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       }
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/cards'] });
-      if (!initialCard) {
-        // If this was a new card, update the URL and state to show the QR code
-        window.history.replaceState(null, '', `/cards/${data.id}`);
-      }
       toast({
         title: "Success",
         description: `Card ${initialCard ? 'updated' : 'created'} successfully`,
@@ -259,17 +255,6 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
               <Save className="mr-2 h-4 w-4" />
               Save Card
             </Button>
-
-            {initialCard && (
-              <Button
-                variant="secondary"
-                onClick={generateWalletPass}
-                className="flex-1"
-              >
-                <Wallet className="mr-2 h-4 w-4" />
-                Add to Apple Wallet
-              </Button>
-            )}
           </div>
 
           {initialCard && design.logo && (
