@@ -4,8 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CardPreview } from "./CardPreview";
+import { WalletPreview } from "./WalletPreview";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Wallet } from "lucide-react";
+import { ArrowLeft, Save, Wallet, CreditCard } from "lucide-react";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import type { LoyaltyCard } from "@db/schema";
 
 interface CardDesignerProps {
@@ -21,7 +28,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     name: initialCard?.name || "",
     primaryColor: "#000000",
     backgroundColor: "#ffffff",
-    logo: initialCard?.design.logo || "",
+    logo: initialCard?.design?.logo || "",
   });
 
   const saveCard = useMutation({
@@ -173,7 +180,24 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       </div>
 
       <div>
-        <CardPreview design={design} />
+        <Tabs defaultValue="card">
+          <TabsList className="mb-4">
+            <TabsTrigger value="card" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Card Preview
+            </TabsTrigger>
+            <TabsTrigger value="wallet" className="flex items-center gap-2">
+              <Wallet className="h-4 w-4" />
+              Wallet Preview
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="card">
+            <CardPreview design={design} />
+          </TabsContent>
+          <TabsContent value="wallet">
+            <WalletPreview design={design} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
