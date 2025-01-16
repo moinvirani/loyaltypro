@@ -16,7 +16,7 @@ interface WalletPreviewProps {
 export function WalletPreview({ design, cardId }: WalletPreviewProps) {
   // Generate QR code value based on card ID
   const qrValue = cardId 
-    ? `pkpass://passes.loyaltypro.app/preview/${cardId}`
+    ? `https://${window.location.host}/api/cards/${cardId}/wallet-pass`
     : 'preview';
 
   return (
