@@ -20,30 +20,18 @@ interface CardDesignerProps {
   onClose: () => void;
 }
 
-interface CardDesign {
-  primaryColor: string;
-  backgroundColor: string;
-  logo?: string;
-  stamps: number;
-}
-
-interface CardData {
-  name: string;
-  design: CardDesign;
-}
-
 export default function CardDesigner({ initialCard, onClose }: CardDesignerProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [formData, setFormData] = useState<CardData>({
+  const [formData, setFormData] = useState({
     name: initialCard?.name || "",
     design: {
       primaryColor: initialCard?.design?.primaryColor || "#000000",
       backgroundColor: initialCard?.design?.backgroundColor || "#ffffff",
       logo: initialCard?.design?.logo || "",
       stamps: initialCard?.design?.stamps || 5,
-    },
+    }
   });
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,53 +59,17 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
     }
 
     try {
-      // Create an image element to get dimensions
-      const img = new Image();
       const reader = new FileReader();
-
-      reader.onload = (e) => {
-        img.src = e.target?.result as string;
-      };
-
-      img.onload = () => {
-        // Create a canvas to resize the image
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // Set maximum dimensions
-        const MAX_WIDTH = 400;
-        const MAX_HEIGHT = 400;
-
-        let width = img.width;
-        let height = img.height;
-
-        // Calculate new dimensions while maintaining aspect ratio
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        // Set canvas dimensions and draw resized image
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Get base64 string with reduced quality
-        const resizedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
         setFormData(prev => ({
           ...prev,
-          design: { ...prev.design, logo: resizedBase64 }
+          design: {
+            ...prev.design,
+            logo: base64
+          }
         }));
       };
-
       reader.readAsDataURL(file);
     } catch (error) {
       toast({
@@ -129,7 +81,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
   };
 
   const saveCard = useMutation({
-    mutationFn: async (data: CardData) => {
+    mutationFn: async (data: typeof formData) => {
       const res = await fetch(
         `/api/cards${initialCard ? `/${initialCard.id}` : ''}`,
         {
@@ -140,9 +92,9 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       );
 
       if (!res.ok) {
-        const error = await res.text();
-        throw new Error(error);
+        throw new Error(await res.text());
       }
+
       return res.json();
     },
     onSuccess: () => {
@@ -290,10 +242,10 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             </TabsTrigger>
           </TabsList>
           <TabsContent value="card">
-            <CardPreview design={formData.design} />
+            <CardPreview design={{ ...formData.design, name: formData.name }} />
           </TabsContent>
           <TabsContent value="wallet">
-            <WalletPreview design={formData.design} />
+            <WalletPreview design={{ ...formData.design, name: formData.name }} />
           </TabsContent>
         </Tabs>
       </div>
