@@ -15,17 +15,51 @@ interface CertificateValidationResult {
 
 export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
   try {
-    // Remove any existing PEM headers/footers and whitespace
-    let content = base64Content
-      .replace(/-----BEGIN [^-]+-----/, '')
-      .replace(/-----END [^-]+-----/, '')
-      .replace(/[\r\n\s]/g, '');
+    // First try to parse as PEM
+    if (base64Content.includes('-----BEGIN')) {
+      return base64Content;
+    }
+
+    // Remove any whitespace
+    let content = base64Content.replace(/[\r\n\s]/g, '');
 
     // Check if the content is actually base64 encoded
     try {
       Buffer.from(content, 'base64');
     } catch (e) {
       throw new Error('Invalid base64 content');
+    }
+
+    // For P12/PFX format private keys, try to convert to PEM
+    if (type === 'PRIVATE KEY') {
+      try {
+        // Try to parse as P12/PFX
+        const p12Der = forge.util.decode64(content);
+        const p12Asn1 = forge.asn1.fromDer(p12Der);
+
+        // Try without password first
+        try {
+          const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1);
+          const bags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+          const keyBag = bags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0];
+
+          if (keyBag?.key) {
+            return forge.pki.privateKeyToPem(keyBag.key);
+          }
+        } catch (e) {
+          // If no password fails, try with empty password
+          const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, '');
+          const bags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+          const keyBag = bags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0];
+
+          if (keyBag?.key) {
+            return forge.pki.privateKeyToPem(keyBag.key);
+          }
+        }
+      } catch (e) {
+        console.log('P12/PFX conversion failed:', e.message);
+        // Continue with regular PEM formatting
+      }
     }
 
     // Split into lines of 64 characters
@@ -57,7 +91,7 @@ export function validatePrivateKey(pemKey: string): CertificateValidationResult 
       privateKey.sign(md);
 
       return { isValid: true, errors: [] };
-    } catch (e) {
+    } catch (e: any) {
       // If RSA parsing fails, try PKCS#8
       try {
         const privateKey = forge.pki.decryptRsaPrivateKey(pemKey);
@@ -65,7 +99,7 @@ export function validatePrivateKey(pemKey: string): CertificateValidationResult 
           throw new Error('Failed to parse private key');
         }
         return { isValid: true, errors: [] };
-      } catch (e2) {
+      } catch (e2: any) {
         errors.push('Failed to parse private key in both RSA and PKCS#8 formats');
         errors.push(`RSA Error: ${e.message}`);
         errors.push(`PKCS#8 Error: ${e2.message}`);
@@ -78,50 +112,6 @@ export function validatePrivateKey(pemKey: string): CertificateValidationResult 
   }
 
   return { isValid, errors };
-}
-
-export function validateWWDRCertificate(pemCert: string): CertificateValidationResult {
-  const errors: string[] = [];
-  let isValid = true;
-  let details;
-
-  try {
-    const cert = forge.pki.certificateFromPem(pemCert);
-
-    details = {
-      subject: cert.subject.getField('CN')?.value,
-      issuer: cert.issuer.getField('CN')?.value,
-      validFrom: cert.validity.notBefore,
-      validTo: cert.validity.notAfter,
-      serialNumber: cert.serialNumber
-    };
-
-    // Verify it's an Apple WWDR certificate
-    if (!cert.issuer.getField('CN')?.value?.includes('Apple')) {
-      errors.push('Not a valid Apple WWDR certificate');
-      isValid = false;
-    }
-
-    // Check if certificate is expired
-    const now = new Date();
-    if (now < cert.validity.notBefore || now > cert.validity.notAfter) {
-      errors.push(`Certificate is ${now < cert.validity.notBefore ? 'not yet valid' : 'expired'}`);
-      isValid = false;
-    }
-
-    // Check basic constraints
-    const basicConstraints = cert.getExtension('basicConstraints');
-    if (!basicConstraints || !basicConstraints.cA) {
-      errors.push('Certificate is not a CA certificate');
-      isValid = false;
-    }
-
-  } catch (error: any) {
-    errors.push(`WWDR certificate validation error: ${error.message}`);
-    isValid = false;
-  }
-
-  return { isValid, errors, details };
 }
 
 export function validateSigningCertificate(pemCert: string): CertificateValidationResult {
@@ -155,6 +145,43 @@ export function validateSigningCertificate(pemCert: string): CertificateValidati
 
   } catch (error: any) {
     errors.push(`Signing certificate validation error: ${error.message}`);
+    isValid = false;
+  }
+
+  return { isValid, errors, details };
+}
+
+export function validateWWDRCertificate(pemCert: string): CertificateValidationResult {
+  const errors: string[] = [];
+  let isValid = true;
+  let details;
+
+  try {
+    const cert = forge.pki.certificateFromPem(pemCert);
+
+    details = {
+      subject: cert.subject.getField('CN')?.value,
+      issuer: cert.issuer.getField('CN')?.value,
+      validFrom: cert.validity.notBefore,
+      validTo: cert.validity.notAfter,
+      serialNumber: cert.serialNumber
+    };
+
+    // Verify it's an Apple WWDR certificate
+    if (!cert.issuer.getField('CN')?.value?.includes('Apple')) {
+      errors.push('Not a valid Apple WWDR certificate');
+      isValid = false;
+    }
+
+    // Check if certificate is expired
+    const now = new Date();
+    if (now < cert.validity.notBefore || now > cert.validity.notAfter) {
+      errors.push(`Certificate is ${now < cert.validity.notBefore ? 'not yet valid' : 'expired'}`);
+      isValid = false;
+    }
+
+  } catch (error: any) {
+    errors.push(`WWDR certificate validation error: ${error.message}`);
     isValid = false;
   }
 
