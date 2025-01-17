@@ -7,21 +7,6 @@ import { processImage, validateImage } from "./services/imageService";
 import { Template } from "@destinationstransfers/passkit";
 import { diagnosePassCertificates, formatPEM } from "./services/certificateService";
 
-// Utility function to format PEM content
-function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
-  // First decode from base64 to get the original content
-  const decoded = Buffer.from(base64Content, 'base64').toString('base64');
-
-  // Split the content into lines of 64 characters
-  const chunks = decoded.match(/.{1,64}/g) || [];
-
-  return [
-    `-----BEGIN ${type}-----`,
-    ...chunks,
-    `-----END ${type}-----`
-  ].join('\n');
-}
-
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
@@ -391,31 +376,41 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Debug certificate availability
-      console.log('Certificate check:');
-      console.log('Pass Type ID:', process.env.APPLE_PASS_TYPE_ID?.substring(0, 10) + '...');
-      console.log('Team ID:', process.env.APPLE_TEAM_ID?.substring(0, 5) + '...');
-      console.log('Has Signing Cert:', !!process.env.APPLE_SIGNING_CERT);
-      console.log('Has Signing Key:', !!process.env.APPLE_SIGNING_KEY);
-      console.log('Has WWDR Cert:', !!process.env.APPLE_WWDR_CERT);
+      console.log('Certificate validation:');
+      console.log('Pass Type ID:', process.env.APPLE_PASS_TYPE_ID);
+      console.log('Team ID:', process.env.APPLE_TEAM_ID);
 
       if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
         throw new Error('Missing required certificates');
       }
 
-      // Format certificates
-      const signingCert = formatPEM(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE');
-      const signingKey = formatPEM(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY');
-      const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT!, 'CERTIFICATE');
+      // Format certificates with proper error handling
+      try {
+        var signingCert = formatPEM(process.env.APPLE_SIGNING_CERT, 'CERTIFICATE');
+        var signingKey = formatPEM(process.env.APPLE_SIGNING_KEY, 'PRIVATE KEY');
+        var wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT, 'CERTIFICATE');
+      } catch (certError: any) {
+        console.error('Certificate formatting error:', certError);
+        return res.status(500).json({
+          message: "Failed to format certificates",
+          error: certError.message
+        });
+      }
 
-      // Diagnose certificates before attempting to generate pass
+      // Log certificate previews for debugging
+      console.log('\nCertificate Previews (first 100 chars):');
+      console.log('Signing Cert:', signingCert.substring(0, 100) + '...');
+      console.log('Signing Key:', signingKey.substring(0, 100) + '...');
+      console.log('WWDR Cert:', wwdrCert.substring(0, 100) + '...');
+
+      // Validate certificates
       const { isValid, diagnostics } = diagnosePassCertificates(
         signingCert,
         signingKey,
         wwdrCert
       );
 
-      // Log diagnostics for debugging
-      console.log('Certificate Diagnostics:');
+      console.log('\nCertificate Diagnostics:');
       diagnostics.forEach(line => console.log(line));
 
       if (!isValid) {
@@ -425,7 +420,7 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Create pass template
+      // Create pass template with basic configuration
       const template = new Template('storeCard', {
         formatVersion: 1,
         passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
@@ -435,49 +430,54 @@ export function registerRoutes(app: Express): Server {
         serialNumber: `card-${card.id}`,
       });
 
-      // Set certificates
-      template.setCertificate(signingCert);
-      template.setPrivateKey(signingKey);
-      template.setWWDRcertificate(wwdrCert);
+      try {
+        // Set certificates using the Template API
+        template.setCertificate(signingCert);
+        template.setPrivateKey(signingKey);
+        template.setWWDRcert(wwdrCert); // Updated method name based on actual API
 
-      // Add basic styling
-      template.backgroundColor = card.design.backgroundColor;
-      template.foregroundColor = card.design.primaryColor;
+        // Add basic styling
+        template.backgroundColor = card.design.backgroundColor;
+        template.foregroundColor = card.design.primaryColor;
 
-      // Add logo if exists
-      if (card.design.logo) {
-        const logoData = card.design.logo.split(',')[1];
-        const logoBuffer = Buffer.from(logoData, 'base64');
-        template.images.add('icon', logoBuffer);
-        template.images.add('logo', logoBuffer);
+        // Add logo if exists
+        if (card.design.logo) {
+          const logoData = card.design.logo.split(',')[1];
+          const logoBuffer = Buffer.from(logoData, 'base64');
+          template.images.add('icon', logoBuffer);
+          template.images.add('logo', logoBuffer);
+        }
+
+        // Add primary fields
+        template.primaryFields.add({
+          key: 'points',
+          label: 'Points',
+          value: '0',
+        });
+
+        // Add barcode
+        template.barcodes = [{
+          message: `card-${card.id}`,
+          format: 'PKBarcodeFormatQR',
+          messageEncoding: 'iso-8859-1',
+        }];
+
+        // Generate and sign the pass
+        const buffer = await template.sign();
+
+        res.set({
+          'Content-Type': 'application/vnd.apple.pkpass',
+          'Content-disposition': `attachment; filename=${card.name}.pkpass`,
+        });
+        res.send(buffer);
+
+      } catch (passError: any) {
+        console.error('Pass generation error:', passError);
+        return res.status(500).json({
+          message: "Failed to generate pass",
+          error: passError.message
+        });
       }
-
-      // Add primary fields
-      template.primaryFields.add({
-        key: 'points',
-        label: 'Points',
-        value: '0',
-      });
-
-      // Add barcode
-      template.barcodes = [{
-        message: `card-${card.id}`,
-        format: 'PKBarcodeFormatQR',
-        messageEncoding: 'iso-8859-1',
-      }];
-
-      // Generate the pass file
-      const buffer = await template.signAndGenerate({
-        signingCert,
-        signingKey,
-        wwdrCert,
-      });
-
-      res.set({
-        'Content-Type': 'application/vnd.apple.pkpass',
-        'Content-disposition': `attachment; filename=${card.name}.pkpass`,
-      });
-      res.send(buffer);
 
     } catch (error: any) {
       console.error('Error generating pass:', error);

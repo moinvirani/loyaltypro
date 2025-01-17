@@ -15,15 +15,14 @@ interface CertificateValidationResult {
 
 export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
   try {
-    // First try to parse as PEM
+    // If content is already in PEM format, return as-is
     if (base64Content.includes('-----BEGIN')) {
       return base64Content;
     }
 
-    // Remove any whitespace
-    let content = base64Content.replace(/[\r\n\s]/g, '');
+    // Remove any whitespace and validate base64
+    const content = base64Content.replace(/[\r\n\s]/g, '');
 
-    // Check if the content is actually base64 encoded
     try {
       Buffer.from(content, 'base64');
     } catch (e) {
@@ -33,7 +32,6 @@ export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE 
     // For P12/PFX format private keys, try to convert to PEM
     if (type === 'PRIVATE KEY') {
       try {
-        // Try to parse as P12/PFX
         const p12Der = forge.util.decode64(content);
         const p12Asn1 = forge.asn1.fromDer(p12Der);
 
@@ -57,8 +55,7 @@ export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE 
           }
         }
       } catch (e) {
-        console.log('P12/PFX conversion failed:', e.message);
-        // Continue with regular PEM formatting
+        console.log('P12/PFX conversion failed, continuing with regular PEM formatting');
       }
     }
 
@@ -70,9 +67,9 @@ export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE 
       ...lines,
       `-----END ${type}-----`
     ].join('\n');
-  } catch (error) {
+  } catch (error: any) {
     console.error('PEM formatting error:', error);
-    throw new Error(`Failed to format PEM content: ${error}`);
+    throw new Error(`Failed to format PEM content: ${error.message}`);
   }
 }
 
