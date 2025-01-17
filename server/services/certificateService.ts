@@ -23,15 +23,17 @@ export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE 
     // Remove any whitespace and validate base64
     const content = base64Content.replace(/[\r\n\s]/g, '');
 
+    // Validate base64 content
     try {
       Buffer.from(content, 'base64');
     } catch (e) {
-      throw new Error('Invalid base64 content');
+      throw new Error('Invalid base64 content. Please ensure you\'ve properly converted your certificate to base64.');
     }
 
     // For P12/PFX format private keys, try to convert to PEM
     if (type === 'PRIVATE KEY') {
       try {
+        // Try to parse as P12/PFX
         const p12Der = forge.util.decode64(content);
         const p12Asn1 = forge.asn1.fromDer(p12Der);
 
@@ -55,21 +57,21 @@ export function formatPEM(base64Content: string, type: 'CERTIFICATE' | 'PRIVATE 
           }
         }
       } catch (e) {
-        console.log('P12/PFX conversion failed, continuing with regular PEM formatting');
+        console.log('Note: P12/PFX conversion failed. If you provided a P12/PFX file, make sure to extract the private key first.');
       }
     }
 
     // Split into lines of 64 characters
     const lines = content.match(/.{1,64}/g) || [];
-
     return [
       `-----BEGIN ${type}-----`,
       ...lines,
       `-----END ${type}-----`
     ].join('\n');
+
   } catch (error: any) {
     console.error('PEM formatting error:', error);
-    throw new Error(`Failed to format PEM content: ${error.message}`);
+    throw new Error(`Failed to format certificate: ${error.message}. Make sure you've provided a valid base64-encoded ${type.toLowerCase()}.`);
   }
 }
 

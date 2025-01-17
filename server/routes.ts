@@ -576,5 +576,59 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Add a new endpoint for certificate validation
+  app.post("/api/certificates/validate", async (req, res) => {
+    try {
+      // Validate environment variables are set
+      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
+        return res.status(400).json({
+          message: "Missing required certificates in environment variables",
+          required: [
+            "APPLE_SIGNING_CERT",
+            "APPLE_SIGNING_KEY",
+            "APPLE_WWDR_CERT"
+          ]
+        });
+      }
+
+      // Format and validate certificates
+      try {
+        var signingCert = formatPEM(process.env.APPLE_SIGNING_CERT, 'CERTIFICATE');
+        var signingKey = formatPEM(process.env.APPLE_SIGNING_KEY, 'PRIVATE KEY');
+        var wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT, 'CERTIFICATE');
+      } catch (certError: any) {
+        return res.status(400).json({
+          message: "Certificate formatting error",
+          error: certError.message
+        });
+      }
+
+      // Validate the formatted certificates
+      const { isValid, diagnostics } = diagnosePassCertificates(
+        signingCert,
+        signingKey,
+        wwdrCert
+      );
+
+      // Return detailed validation results
+      return res.json({
+        isValid,
+        diagnostics,
+        certificates: {
+          signingCert: signingCert.substring(0, 100) + '...',
+          signingKey: signingKey.substring(0, 100) + '...',
+          wwdrCert: wwdrCert.substring(0, 100) + '...'
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Certificate validation error:', error);
+      return res.status(500).json({
+        message: "Failed to validate certificates",
+        error: error.message
+      });
+    }
+  });
+
   return httpServer;
 }
