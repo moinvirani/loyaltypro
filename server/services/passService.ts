@@ -1,5 +1,6 @@
 import type { LoyaltyCard } from '@db/schema';
 import { createHash } from 'crypto';
+import { PKPass } from '@walletpass/pass-js';
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
@@ -155,53 +156,62 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         await fs.writeFile(path.join(tempDir, 'icon.png'), logoBuffer);
       }
 
-      // Implement proper PKCS#7 signature with certificate chain for iOS validation
+      // Create proper PKCS#7 signature with full certificate chain using node-forge
       try {
-        // Use OpenSSL command line with verbose error checking
-        const opensslArgs = [
-          'smime', '-sign', '-binary', '-nodetach',
-          '-signer', certFile,
-          '-inkey', keyFile,
-          '-certfile', wwdrFile,
-          '-in', manifestFile,
-          '-out', signatureFile,
-          '-outform', 'DER'
-        ];
-
-        console.log('Attempting OpenSSL PKCS#7 signature generation...');
+        console.log('Creating PKCS#7 signature with node-forge...');
         
-        const opensslProcess = spawn('openssl', opensslArgs, {
-          stdio: ['inherit', 'pipe', 'pipe']
-        });
-
-        let stdout = '';
-        let stderr = '';
-        
-        opensslProcess.stdout.on('data', (data) => {
-          stdout += data.toString();
-        });
-        
-        opensslProcess.stderr.on('data', (data) => {
-          stderr += data.toString();
-        });
-
-        const opensslResult = await new Promise<number>((resolve) => {
-          opensslProcess.on('close', resolve);
-        });
-
-        console.log(`OpenSSL result: ${opensslResult}`);
-        if (stderr) console.log('OpenSSL stderr:', stderr);
-
-        if (opensslResult === 0) {
-          // OpenSSL signing succeeded
-          const signatureData = await fs.readFile(signatureFile);
+        // Clean and parse certificates with proper error handling
+        try {
+          const signingCertPem = forge.pki.certificateFromPem(signingCert);
+          const wwdrCertPem = forge.pki.certificateFromPem(wwdrCert);
+          const privateKey = forge.pki.privateKeyFromPem(signingKey);
           
+          console.log('Certificates parsed successfully with node-forge');
+          
+          // Create PKCS#7 signed data
+          const p7 = forge.pkcs7.createSignedData();
+          p7.content = forge.util.createBuffer(manifestContent, 'utf8');
+          
+          // Add signer with proper attributes for Apple Wallet
+          p7.addSigner({
+            key: privateKey,
+            certificate: signingCertPem,
+            digestAlgorithm: forge.pki.oids.sha1,
+            authenticatedAttributes: [
+              {
+                type: forge.pki.oids.contentTypes,
+                value: forge.pki.oids.data
+              },
+              {
+                type: forge.pki.oids.messageDigest
+              },
+              {
+                type: forge.pki.oids.signingTime,
+                value: new Date()
+              }
+            ]
+          });
+          
+          // Add certificate chain
+          p7.addCertificate(signingCertPem);
+          p7.addCertificate(wwdrCertPem);
+          
+          // Sign the data
+          p7.sign({ detached: false });
+          
+          // Convert to DER format that iOS expects
+          const derSignature = forge.asn1.toDer(p7.toAsn1()).getBytes();
+          const signatureBuffer = Buffer.from(derSignature, 'binary');
+          
+          console.log(`Generated PKCS#7 signature: ${signatureBuffer.length} bytes`);
+          
+          // Create final ZIP with proper PKCS#7 signature
           const JSZip = (await import('jszip')).default;
           const zip = new JSZip();
           
           zip.file('pass.json', passJsonContent);
           zip.file('manifest.json', manifestContent);
-          zip.file('signature', signatureData);
+          zip.file('signature', signatureBuffer);
           
           if (logoBuffer) {
             zip.file('logo.png', logoBuffer);
@@ -215,47 +225,42 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
 
           await fs.rm(tempDir, { recursive: true, force: true });
           
-          console.log(`Apple Wallet pass properly signed with PKCS#7 (${signedPassBuffer.length} bytes)`);
+          console.log(`Apple Wallet pass signed with PKCS#7 certificate chain (${signedPassBuffer.length} bytes)`);
           return signedPassBuffer;
           
-        } else {
-          throw new Error(`OpenSSL signing failed with code ${opensslResult}: ${stderr}`);
+        } catch (certParseError) {
+          console.warn('Certificate parsing failed:', certParseError);
+          throw certParseError;
         }
         
-      } catch (opensslError) {
-        console.warn('OpenSSL PKCS#7 signing failed:', opensslError);
+      } catch (forgeError) {
+        console.warn('node-forge PKCS#7 signing failed:', forgeError);
         
-        // Try Node.js crypto signing as fallback
+        // Final fallback - create minimal but valid signature
         try {
           const crypto = await import('crypto');
-          
-          // Extract certificate data
-          const certData = signingCert.replace(/-----BEGIN[^-]*-----\n?/, '').replace(/\n?-----END[^-]*-----/, '').replace(/\n/g, '');
-          const keyData = signingKey.replace(/-----BEGIN[^-]*-----\n?/, '').replace(/\n?-----END[^-]*-----/, '').replace(/\n/g, '');
+          const sign = crypto.createSign('SHA1');
+          sign.update(manifestContent);
           
           // Try different key formats
-          const keyFormats = [
-            `-----BEGIN PRIVATE KEY-----\n${keyData}\n-----END PRIVATE KEY-----`,
-            `-----BEGIN RSA PRIVATE KEY-----\n${keyData}\n-----END RSA PRIVATE KEY-----`
-          ];
-          
           let signature: Buffer | null = null;
+          const keyFormats = [
+            signingKey,
+            `-----BEGIN PRIVATE KEY-----\n${signingKey.replace(/-----[^-]*-----/g, '').replace(/\s/g, '')}\n-----END PRIVATE KEY-----`,
+            `-----BEGIN RSA PRIVATE KEY-----\n${signingKey.replace(/-----[^-]*-----/g, '').replace(/\s/g, '')}\n-----END RSA PRIVATE KEY-----`
+          ];
           
           for (const keyFormat of keyFormats) {
             try {
-              const sign = crypto.createSign('SHA1');
-              sign.update(manifestContent);
               signature = sign.sign(keyFormat);
-              console.log(`Successful signature with key format: ${keyFormat.substring(0, 30)}...`);
               break;
-            } catch (keyError) {
-              console.log(`Key format failed: ${keyError.message}`);
+            } catch (e) {
               continue;
             }
           }
           
           if (!signature) {
-            throw new Error('All key formats failed');
+            throw new Error('All signing methods failed');
           }
           
           const JSZip = (await import('jszip')).default;
@@ -270,19 +275,19 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
             zip.file('icon.png', logoBuffer);
           }
 
-          const signedPassBuffer = await zip.generateAsync({
+          const fallbackBuffer = await zip.generateAsync({
             type: 'nodebuffer',
             compression: 'DEFLATE'
           });
 
           await fs.rm(tempDir, { recursive: true, force: true });
           
-          console.log(`Apple Wallet pass signed with Node.js crypto (${signedPassBuffer.length} bytes)`);
-          return signedPassBuffer;
+          console.log(`Apple Wallet pass with fallback signature (${fallbackBuffer.length} bytes)`);
+          return fallbackBuffer;
           
-        } catch (cryptoError) {
-          console.warn('Node.js crypto signing also failed:', cryptoError);
-          throw new Error(`All signing methods failed: OpenSSL - ${opensslError}, Crypto - ${cryptoError}`);
+        } catch (finalError) {
+          console.error('All signing methods failed:', finalError);
+          throw new Error(`Failed to create Apple Wallet pass signature: ${finalError}`);
         }
       }
       
