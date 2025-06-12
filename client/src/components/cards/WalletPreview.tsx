@@ -6,6 +6,10 @@ interface CardDesign {
   primaryColor: string;
   backgroundColor: string;
   logo?: string;
+  gradientEnabled?: boolean;
+  gradientColor?: string;
+  textColor?: string;
+  cardStyle?: string;
 }
 
 interface WalletPreviewProps {
@@ -19,6 +23,16 @@ export function WalletPreview({ design, cardId }: WalletPreviewProps) {
     ? `https://${window.location.host}/api/cards/${cardId}/wallet-pass`
     : 'preview';
 
+  // Create background style based on design settings
+  const getBackgroundStyle = () => {
+    if (design.gradientEnabled && design.gradientColor) {
+      return {
+        background: `linear-gradient(135deg, ${design.backgroundColor} 0%, ${design.gradientColor} 100%)`
+      };
+    }
+    return { background: design.backgroundColor };
+  };
+
   return (
     <div className="rounded-xl overflow-hidden shadow-lg max-w-sm mx-auto">
       {/* Header bar to simulate iOS wallet */}
@@ -30,8 +44,8 @@ export function WalletPreview({ design, cardId }: WalletPreviewProps) {
       {/* Pass content */}
       <div className="bg-white">
         {/* Pass header */}
-        <div className="p-4 border-b" style={{ background: design.backgroundColor }}>
-          <div className="flex items-center gap-2" style={{ color: design.primaryColor }}>
+        <div className="p-4 border-b" style={getBackgroundStyle()}>
+          <div className="flex items-center gap-2" style={{ color: design.textColor || design.primaryColor }}>
             {design.logo ? (
               <img 
                 src={design.logo} 

@@ -27,14 +27,38 @@ export function CardPreview({ design, customerId, cardId }: CardPreviewProps) {
       ? `https://${window.location.host}/api/cards/${cardId}/wallet-pass` 
       : 'preview';
 
+  // Create background style based on design settings
+  const getBackgroundStyle = () => {
+    if (design.gradientEnabled && design.gradientColor) {
+      return {
+        background: `linear-gradient(135deg, ${design.backgroundColor} 0%, ${design.gradientColor} 100%)`
+      };
+    }
+    return { background: design.backgroundColor };
+  };
+
+  // Get card style classes
+  const getCardStyleClasses = () => {
+    switch (design.cardStyle) {
+      case 'classic':
+        return 'border-2 border-opacity-20';
+      case 'minimalist':
+        return 'shadow-sm';
+      case 'elegant':
+        return 'shadow-xl border border-opacity-10';
+      default:
+        return '';
+    }
+  };
+
   return (
-    <div className="rounded-lg overflow-hidden shadow-lg">
+    <div className={`rounded-lg overflow-hidden shadow-lg ${getCardStyleClasses()}`}>
       <div
         className="aspect-[1.586/1] p-6"
-        style={{ background: design.backgroundColor }}
+        style={getBackgroundStyle()}
       >
         <div className="h-full flex flex-col">
-          <div className="flex items-center gap-2" style={{ color: design.primaryColor }}>
+          <div className="flex items-center gap-2" style={{ color: design.textColor || design.primaryColor }}>
             {design.logo ? (
               <img 
                 src={design.logo} 
