@@ -6,13 +6,21 @@ import { Label } from "@/components/ui/label";
 import { CardPreview } from "./CardPreview";
 import { WalletPreview } from "./WalletPreview";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Wallet, CreditCard } from "lucide-react";
+import { ArrowLeft, Save, Wallet, CreditCard, Palette } from "lucide-react";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import type { LoyaltyCard } from "@db/schema";
 
 interface CardDesignerProps {
@@ -32,6 +40,10 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       backgroundColor: initialCard?.design?.backgroundColor || "#ffffff",
       logo: initialCard?.design?.logo || "",
       stamps: initialCard?.design?.stamps || 5,
+      gradientEnabled: initialCard?.design?.gradientEnabled || false,
+      gradientColor: initialCard?.design?.gradientColor || "#f0f0f0",
+      textColor: initialCard?.design?.textColor || "#ffffff",
+      cardStyle: initialCard?.design?.cardStyle || "modern",
     }
   });
 
@@ -263,6 +275,89 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
                 design: { ...prev.design, stamps: parseInt(e.target.value) || 5 }
               }))}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cardStyle">Card Style</Label>
+            <Select
+              value={formData.design.cardStyle}
+              onValueChange={(value) => setFormData(prev => ({
+                ...prev,
+                design: { ...prev.design, cardStyle: value }
+              }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a style" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="modern">Modern</SelectItem>
+                <SelectItem value="classic">Classic</SelectItem>
+                <SelectItem value="minimalist">Minimalist</SelectItem>
+                <SelectItem value="elegant">Elegant</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="gradient"
+                checked={formData.design.gradientEnabled}
+                onCheckedChange={(checked) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, gradientEnabled: checked }
+                }))}
+              />
+              <Label htmlFor="gradient">Enable Gradient Background</Label>
+            </div>
+          </div>
+
+          {formData.design.gradientEnabled && (
+            <div className="space-y-2">
+              <Label htmlFor="gradientColor">Gradient Color</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="gradientColor"
+                  type="color"
+                  value={formData.design.gradientColor}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    design: { ...prev.design, gradientColor: e.target.value }
+                  }))}
+                  className="w-20"
+                />
+                <Input
+                  value={formData.design.gradientColor}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    design: { ...prev.design, gradientColor: e.target.value }
+                  }))}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="textColor">Text Color</Label>
+            <div className="flex gap-2">
+              <Input
+                id="textColor"
+                type="color"
+                value={formData.design.textColor}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, textColor: e.target.value }
+                }))}
+                className="w-20"
+              />
+              <Input
+                value={formData.design.textColor}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, textColor: e.target.value }
+                }))}
+              />
+            </div>
           </div>
 
           <Button

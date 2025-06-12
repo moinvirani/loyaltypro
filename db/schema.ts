@@ -9,6 +9,10 @@ export const designSchema = z.object({
   backgroundColor: z.string(),
   logo: z.string().optional(),
   stamps: z.number().optional(),
+  gradientEnabled: z.boolean().optional(),
+  gradientColor: z.string().optional(),
+  textColor: z.string().optional(),
+  cardStyle: z.string().optional(),
 });
 
 export type Design = z.infer<typeof designSchema>;

@@ -7,6 +7,10 @@ interface CardDesign {
   backgroundColor: string;
   logo?: string;
   stamps?: number;
+  gradientEnabled?: boolean;
+  gradientColor?: string;
+  textColor?: string;
+  cardStyle?: string;
 }
 
 interface CardPreviewProps {

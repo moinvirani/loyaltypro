@@ -15,6 +15,7 @@ import {
 import { PlusCircle, Trash2 } from "lucide-react";
 import CardDesigner from "@/components/cards/CardDesigner";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { CardPreview } from "@/components/cards/CardPreview";
 import { useToast } from "@/hooks/use-toast";
 import type { LoyaltyCard } from "@db/schema";
 
@@ -90,8 +91,17 @@ export default function CardDesignerPage() {
                   <CardTitle>{card.name}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="aspect-[1.586/1] rounded-lg border bg-card">
-                    {/* Card preview will be rendered here */}
+                  <div className="aspect-[1.586/1]">
+                    <CardPreview
+                      design={{
+                        name: card.name,
+                        primaryColor: card.design.primaryColor,
+                        backgroundColor: card.design.backgroundColor,
+                        logo: card.design.logo,
+                        stamps: card.design.stamps
+                      }}
+                      cardId={card.id}
+                    />
                   </div>
                 </CardContent>
               </div>
