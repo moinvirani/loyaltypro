@@ -110,143 +110,72 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
 
     // Create PKCS#7 signature for the manifest
     try {
-      console.log('Starting PKCS#7 signature generation...');
+      console.log('Starting Apple Wallet pass signing...');
       
-      // Use spawn to call OpenSSL directly for reliable PKCS#7 signing
-      const { spawn } = await import('child_process');
+      // Use passkit-generator library for proper Apple Wallet signing
+      const PassKit = await import('passkit-generator');
       const fs = await import('fs/promises');
       const path = await import('path');
       
-      // Validate and prepare certificate data
+      // Validate required environment variables
       if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
-        throw new Error('Missing required Apple certificates in environment');
-      }
-      
-      // Handle certificates - they may already be PEM formatted
-      let certPem: string, keyPem: string, wwdrPem: string;
-      
-      try {
-        // Try direct use first (if already PEM formatted)
-        const rawCert = process.env.APPLE_SIGNING_CERT;
-        const rawKey = process.env.APPLE_SIGNING_KEY;
-        const rawWwdr = process.env.APPLE_WWDR_CERT;
-        
-        if (rawCert?.includes('-----BEGIN')) {
-          // Already PEM formatted
-          certPem = rawCert;
-          keyPem = rawKey!;
-          wwdrPem = rawWwdr!;
-          console.log('Using PEM formatted certificates directly');
-        } else {
-          // Try to decode as base64 and handle different formats
-          try {
-            const signingCert = Buffer.from(rawCert!, 'base64').toString('utf8');
-            const signingKey = Buffer.from(rawKey!, 'base64').toString('utf8');
-            const wwdrCert = Buffer.from(rawWwdr!, 'base64').toString('utf8');
-            
-            // Check if decoded content is already PEM formatted
-            if (signingCert.includes('-----BEGIN')) {
-              certPem = signingCert;
-              keyPem = signingKey;
-              wwdrPem = wwdrCert;
-              console.log('Decoded base64 to PEM formatted certificates');
-            } else {
-              // Raw certificate data - need to format as PEM with proper line breaks
-              certPem = `-----BEGIN CERTIFICATE-----\n${signingCert.replace(/(.{64})/g, '$1\n').trim()}\n-----END CERTIFICATE-----`;
-              keyPem = `-----BEGIN PRIVATE KEY-----\n${signingKey.replace(/(.{64})/g, '$1\n').trim()}\n-----END PRIVATE KEY-----`;
-              wwdrPem = `-----BEGIN CERTIFICATE-----\n${wwdrCert.replace(/(.{64})/g, '$1\n').trim()}\n-----END CERTIFICATE-----`;
-              console.log('Formatted raw certificate data as PEM');
-            }
-          } catch (b64Error) {
-            // Try treating as raw PEM data
-            certPem = rawCert!;
-            keyPem = rawKey!;
-            wwdrPem = rawWwdr!;
-            console.log('Using certificates as raw data');
-          }
-        }
-      } catch (certError) {
-        throw new Error(`Certificate processing failed: ${certError}`);
+        throw new Error('Missing required Apple certificates');
       }
 
-      // Create temporary directory for certificate operations
-      const tempDir = '/tmp/pass_signing';
+      // Create temporary directory for passkit-generator
+      const tempDir = '/tmp/passkit_signing';
       await fs.mkdir(tempDir, { recursive: true });
       
-      const certFile = path.join(tempDir, 'cert.pem');
-      const keyFile = path.join(tempDir, 'key.pem');
-      const wwdrFile = path.join(tempDir, 'wwdr.pem');
-      const manifestFile = path.join(tempDir, 'manifest.json');
-      const chainFile = path.join(tempDir, 'chain.pem');
-      const signatureFile = path.join(tempDir, 'signature');
-
-      // Write files and validate them
-      await fs.writeFile(certFile, certPem);
-      await fs.writeFile(keyFile, keyPem);
-      await fs.writeFile(wwdrFile, wwdrPem);
-      await fs.writeFile(manifestFile, manifestJson);
+      // Write certificate files for passkit-generator
+      const certPath = path.join(tempDir, 'signerCert.pem');
+      const keyPath = path.join(tempDir, 'signerKey.pem');
+      const wwdrPath = path.join(tempDir, 'wwdrCert.pem');
       
-      // Test certificate readability
-      try {
-        const testCert = spawn('openssl', ['x509', '-in', certFile, '-noout']);
-        const testWwdr = spawn('openssl', ['x509', '-in', wwdrFile, '-noout']);
-        
-        let certErrors = '';
-        let wwdrErrors = '';
-        
-        testCert.stderr.on('data', (data) => certErrors += data.toString());
-        testWwdr.stderr.on('data', (data) => wwdrErrors += data.toString());
-        
-        await Promise.all([
-          new Promise((resolve) => testCert.on('close', resolve)),
-          new Promise((resolve) => testWwdr.on('close', resolve))
-        ]);
-        
-        if (certErrors) console.log('Signing cert issues:', certErrors);
-        if (wwdrErrors) console.log('WWDR cert issues:', wwdrErrors);
-        
-      } catch (testError) {
-        console.log('Certificate test failed:', testError);
+      await fs.writeFile(certPath, process.env.APPLE_SIGNING_CERT);
+      await fs.writeFile(keyPath, process.env.APPLE_SIGNING_KEY);
+      await fs.writeFile(wwdrPath, process.env.APPLE_WWDR_CERT);
+
+      // Create passkit template structure
+      const templateDir = path.join(tempDir, 'template');
+      await fs.mkdir(templateDir, { recursive: true });
+      
+      // Write pass.json
+      await fs.writeFile(path.join(templateDir, 'pass.json'), JSON.stringify(passData, null, 2));
+      
+      // Copy icon if exists
+      if (design.logo) {
+        const iconBuffer = Buffer.from(design.logo.split(',')[1], 'base64');
+        await fs.writeFile(path.join(templateDir, 'icon.png'), iconBuffer);
+        await fs.writeFile(path.join(templateDir, 'icon@2x.png'), iconBuffer);
       }
 
-      // Create PKCS#7 signature using OpenSSL
-      const signProcess = spawn('openssl', [
-        'smime', '-sign', '-binary', '-nodetach',
-        '-signer', certFile,
-        '-inkey', keyFile,
-        '-certfile', wwdrFile,
-        '-in', manifestFile,
-        '-out', signatureFile,
-        '-outform', 'DER'
-      ]);
-
-      await new Promise((resolve, reject) => {
-        let stderr = '';
-        signProcess.stderr.on('data', (data) => {
-          stderr += data.toString();
-        });
-        
-        signProcess.on('close', (code) => {
-          if (code === 0) {
-            resolve(code);
-          } else {
-            reject(new Error(`OpenSSL signing failed with code ${code}: ${stderr}`));
+      // Create signed pass using passkit-generator
+      try {
+        const pass = await PassKit.PKPass.from({
+          model: templateDir,
+          certificates: {
+            signerCert: certPath,
+            signerKey: keyPath,
+            wwdrCert: wwdrPath,
           }
         });
-      });
 
-      // Read the signature and add to zip
-      const signatureData = await fs.readFile(signatureFile);
-      zip.file('signature', signatureData);
-
-      // Clean up
-      await fs.rm(tempDir, { recursive: true, force: true });
-      
-      console.log('Apple Wallet pass signed successfully using OpenSSL with your certificates');
+        const signedPassBuffer = pass.getAsBuffer();
+        
+        // Clean up
+        await fs.rm(tempDir, { recursive: true, force: true });
+        
+        console.log('Apple Wallet pass signed successfully using passkit-generator');
+        return signedPassBuffer;
+        
+      } catch (passkitError: any) {
+        console.warn('passkit-generator failed:', passkitError.message);
+        throw passkitError;
+      }
       
     } catch (signingError: any) {
-      console.error('PKCS#7 signing failed:', signingError.message);
-      console.log('Generating unsigned pass - iOS will reject this but structure is correct');
+      console.error('Apple Wallet signing failed:', signingError.message);
+      console.log('Falling back to unsigned pass structure');
     }
 
     // Generate final pass file
