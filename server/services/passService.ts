@@ -122,25 +122,38 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         throw new Error('Missing required Apple certificates in environment');
       }
       
-      // Decode base64 certificates
-      let signingCert: string, signingKey: string, wwdrCert: string;
+      // Handle certificates - they may already be PEM formatted
+      let certPem: string, keyPem: string, wwdrPem: string;
       
       try {
-        signingCert = Buffer.from(process.env.APPLE_SIGNING_CERT, 'base64').toString('utf8');
-        signingKey = Buffer.from(process.env.APPLE_SIGNING_KEY, 'base64').toString('utf8');
-        wwdrCert = Buffer.from(process.env.APPLE_WWDR_CERT, 'base64').toString('utf8');
-        console.log('Certificates decoded successfully');
-      } catch (decodeError) {
-        throw new Error(`Certificate decoding failed: ${decodeError}`);
+        // Try direct use first (if already PEM formatted)
+        const rawCert = process.env.APPLE_SIGNING_CERT;
+        const rawKey = process.env.APPLE_SIGNING_KEY;
+        const rawWwdr = process.env.APPLE_WWDR_CERT;
+        
+        if (rawCert?.includes('-----BEGIN')) {
+          certPem = rawCert;
+          keyPem = rawKey!;
+          wwdrPem = rawWwdr!;
+          console.log('Using PEM formatted certificates directly');
+        } else {
+          // Decode from base64
+          const signingCert = Buffer.from(rawCert!, 'base64').toString('utf8');
+          const signingKey = Buffer.from(rawKey!, 'base64').toString('utf8');
+          const wwdrCert = Buffer.from(rawWwdr!, 'base64').toString('utf8');
+          
+          // Format as PEM
+          certPem = signingCert.includes('-----BEGIN') ? signingCert : 
+            `-----BEGIN CERTIFICATE-----\n${signingCert.replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----`;
+          keyPem = signingKey.includes('-----BEGIN') ? signingKey :
+            `-----BEGIN PRIVATE KEY-----\n${signingKey.replace(/(.{64})/g, '$1\n')}\n-----END PRIVATE KEY-----`;
+          wwdrPem = wwdrCert.includes('-----BEGIN') ? wwdrCert :
+            `-----BEGIN CERTIFICATE-----\n${wwdrCert.replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----`;
+          console.log('Decoded and formatted certificates from base64');
+        }
+      } catch (certError) {
+        throw new Error(`Certificate processing failed: ${certError}`);
       }
-
-      // Ensure proper PEM formatting
-      const certPem = signingCert.includes('-----BEGIN') ? signingCert : 
-        `-----BEGIN CERTIFICATE-----\n${signingCert}\n-----END CERTIFICATE-----`;
-      const keyPem = signingKey.includes('-----BEGIN') ? signingKey :
-        `-----BEGIN PRIVATE KEY-----\n${signingKey}\n-----END PRIVATE KEY-----`;
-      const wwdrPem = wwdrCert.includes('-----BEGIN') ? wwdrCert :
-        `-----BEGIN CERTIFICATE-----\n${wwdrCert}\n-----END CERTIFICATE-----`;
 
       // Create temporary directory for certificate operations
       const tempDir = '/tmp/pass_signing';
@@ -153,14 +166,34 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       const chainFile = path.join(tempDir, 'chain.pem');
       const signatureFile = path.join(tempDir, 'signature');
 
-      // Write files
+      // Write files and validate them
       await fs.writeFile(certFile, certPem);
       await fs.writeFile(keyFile, keyPem);
       await fs.writeFile(wwdrFile, wwdrPem);
       await fs.writeFile(manifestFile, manifestJson);
       
-      // Create certificate chain (signing cert + WWDR cert)
-      await fs.writeFile(chainFile, certPem + '\n' + wwdrPem);
+      // Test certificate readability
+      try {
+        const testCert = spawn('openssl', ['x509', '-in', certFile, '-noout']);
+        const testWwdr = spawn('openssl', ['x509', '-in', wwdrFile, '-noout']);
+        
+        let certErrors = '';
+        let wwdrErrors = '';
+        
+        testCert.stderr.on('data', (data) => certErrors += data.toString());
+        testWwdr.stderr.on('data', (data) => wwdrErrors += data.toString());
+        
+        await Promise.all([
+          new Promise((resolve) => testCert.on('close', resolve)),
+          new Promise((resolve) => testWwdr.on('close', resolve))
+        ]);
+        
+        if (certErrors) console.log('Signing cert issues:', certErrors);
+        if (wwdrErrors) console.log('WWDR cert issues:', wwdrErrors);
+        
+      } catch (testError) {
+        console.log('Certificate test failed:', testError);
+      }
 
       // Create PKCS#7 signature using OpenSSL
       const signProcess = spawn('openssl', [
