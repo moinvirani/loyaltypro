@@ -1,0 +1,1 @@
+{"message":"Failed to generate pass","error":"Failed to create Apple Wallet pass: Command failed: zip -r -q /tmp/card-28-1749740749233.pkpass .\n/bin/sh: 1: zip: not found\n"}

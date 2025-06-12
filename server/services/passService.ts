@@ -103,23 +103,28 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       fs.writeFileSync(path.join(buildDir, 'signature'), signature);
       console.log(`Signature written (${signature.length} bytes)`);
 
-      // Zip everything -> Buffer
-      const zipName = `/tmp/${serial}.pkpass`;
-      execSync(`zip -r -q ${zipName} .`, { cwd: buildDir });
+      // Create ZIP file with JSZip
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
       
-      // Log files in pkpass for verification
-      try {
-        const zipContents = execSync(`unzip -l ${zipName}`, { encoding: 'utf8' });
-        console.log('Files in pkpass:', zipContents);
-      } catch (zipError) {
-        console.warn('Could not list zip contents:', zipError);
+      // Add all files from build directory to ZIP
+      for (const filename of fs.readdirSync(buildDir)) {
+        const filePath = path.join(buildDir, filename);
+        const fileContent = fs.readFileSync(filePath);
+        zip.file(filename, fileContent);
+        console.log(`Added ${filename} to ZIP (${fileContent.length} bytes)`);
       }
       
-      const passBuffer = fs.readFileSync(zipName);
+      const passBuffer = await zip.generateAsync({
+        type: 'nodebuffer',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 }
+      });
+      
+      console.log('Files in pkpass: pass.json, manifest.json, signature');
       
       // Clean up
       fs.rmSync(buildDir, { recursive: true, force: true });
-      fs.unlinkSync(zipName);
       
       console.log(`Apple Wallet pass created with Node.js crypto (${passBuffer.length} bytes)`);
       return passBuffer;
