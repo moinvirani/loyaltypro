@@ -93,9 +93,14 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         const formattedCert = formatPemForForge(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE');
         const formattedKey = formatPemForForge(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY');
         
-        // Parse certificates and key using node-forge
+        // Parse certificates and key using node-forge with error handling
+        console.log('Parsing signing certificate...');
         const signingCert = forge.pki.certificateFromPem(formattedCert);
+        console.log('Certificate parsed successfully');
+        
+        console.log('Parsing private key...');
         const privateKey = forge.pki.privateKeyFromPem(formattedKey);
+        console.log('Private key parsed successfully');
         
         // Create PKCS#7 signed data structure
         const p7 = forge.pkcs7.createSignedData();
@@ -143,20 +148,57 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         
       } catch (forgeError) {
         console.log('PKCS#7 creation failed, error:', (forgeError as Error).message);
-        console.log('Creating iOS-compatible signature with proper format...');
+        console.log('Creating fallback signature with multiple key format attempts...');
         
-        // Create a properly formatted signature that iOS can validate
         const keyData = process.env.APPLE_SIGNING_KEY!;
-        const cleanKey = keyData.replace(/\s+/g, '').replace(/-----[^-]*-----/g, '');
-        const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey.match(/.{1,64}/g)?.join('\n')}\n-----END PRIVATE KEY-----`;
-        
-        // Use SHA256 with proper DER encoding for iOS compatibility
-        const sign = crypto.createSign('RSA-SHA256');
+        const sign = crypto.createSign('SHA1');
         sign.update(manifestData);
-        const signature = sign.sign(formattedKey);
+        
+        let signature: Buffer | null = null;
+        
+        // Try multiple key formats to handle different certificate types
+        const keyFormats = [
+          // Original format
+          keyData,
+          // PKCS#8 format
+          keyData.replace(/-----BEGIN.*PRIVATE KEY-----/, '-----BEGIN PRIVATE KEY-----')
+                .replace(/-----END.*PRIVATE KEY-----/, '-----END PRIVATE KEY-----'),
+          // RSA format
+          keyData.replace(/-----BEGIN.*PRIVATE KEY-----/, '-----BEGIN RSA PRIVATE KEY-----')
+                .replace(/-----END.*PRIVATE KEY-----/, '-----END RSA PRIVATE KEY-----'),
+          // Clean and reformat
+          (() => {
+            const clean = keyData.replace(/\s+/g, '').replace(/-----[^-]*-----/g, '');
+            const lines = clean.match(/.{1,64}/g) || [];
+            return `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
+          })(),
+          // Clean and reformat as RSA
+          (() => {
+            const clean = keyData.replace(/\s+/g, '').replace(/-----[^-]*-----/g, '');
+            const lines = clean.match(/.{1,64}/g) || [];
+            return `-----BEGIN RSA PRIVATE KEY-----\n${lines.join('\n')}\n-----END RSA PRIVATE KEY-----`;
+          })()
+        ];
+        
+        for (let i = 0; i < keyFormats.length; i++) {
+          try {
+            const testSign = crypto.createSign('SHA1');
+            testSign.update(manifestData);
+            signature = testSign.sign(keyFormats[i]);
+            console.log(`Signature created with key format ${i + 1} (${signature.length} bytes)`);
+            break;
+          } catch (keyError) {
+            console.log(`Key format ${i + 1} failed:`, (keyError as Error).message);
+            continue;
+          }
+        }
+        
+        if (!signature) {
+          throw new Error('All private key formats failed - invalid key data');
+        }
         
         fs.writeFileSync(path.join(buildDir, 'signature'), signature);
-        console.log(`iOS-compatible signature created (${signature.length} bytes)`);
+        console.log(`Fallback signature written successfully`);
       }
 
       // Create ZIP file with JSZip
