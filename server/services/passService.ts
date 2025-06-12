@@ -1,6 +1,6 @@
 import type { LoyaltyCard } from '@db/schema';
 import { createHash } from 'crypto';
-import * as forge from 'node-forge';
+const forge = require('node-forge');
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
