@@ -22,9 +22,9 @@ interface CardPreviewProps {
 export function CardPreview({ design, customerId, cardId }: CardPreviewProps) {
   // Generate QR code value based on available IDs
   const qrValue = customerId 
-    ? `https://${window.location.host}/api/wallet-pass/${cardId}/${customerId}`
+    ? `https://${window.location.host}/wallet/${cardId}?customer=${customerId}`
     : cardId 
-      ? `https://${window.location.host}/api/cards/${cardId}/wallet-pass` 
+      ? `https://${window.location.host}/wallet/${cardId}` 
       : 'preview';
 
   // Create background style based on design settings

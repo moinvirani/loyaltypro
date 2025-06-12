@@ -358,7 +358,92 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Generate wallet pass for existing card
+  // GET endpoint for QR code wallet pass download
+  app.get("/api/cards/:id/wallet-pass", async (req, res) => {
+    try {
+      const businessId = 1; // TODO: Get from auth
+      const cardId = parseInt(req.params.id);
+
+      const card = await db.query.loyaltyCards.findFirst({
+        where: and(
+          eq(loyaltyCards.id, cardId),
+          eq(loyaltyCards.businessId, businessId)
+        ),
+      });
+
+      if (!card) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+
+      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
+        throw new Error('Missing required certificates');
+      }
+
+      // Format certificates
+      const signingCert = formatPEM(process.env.APPLE_SIGNING_CERT, 'CERTIFICATE');
+      const signingKey = formatPEM(process.env.APPLE_SIGNING_KEY, 'PRIVATE KEY');
+      const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT, 'CERTIFICATE');
+
+      // Create pass template
+      const template = new Template('storeCard', {
+        formatVersion: 1,
+        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+        teamIdentifier: process.env.APPLE_TEAM_ID,
+        organizationName: "Loyalty Pro",
+        description: card.name,
+        serialNumber: `card-${card.id}-${Date.now()}`,
+      });
+
+      // Set certificates
+      template.setCertificate(signingCert);
+      template.setPrivateKey(signingKey);
+      template.setWWDRcert(wwdrCert);
+
+      // Add styling
+      template.backgroundColor = card.design.backgroundColor;
+      template.foregroundColor = card.design.textColor || card.design.primaryColor;
+
+      // Add logo if exists
+      if (card.design.logo) {
+        const logoData = card.design.logo.split(',')[1];
+        const logoBuffer = Buffer.from(logoData, 'base64');
+        template.images.add('icon', logoBuffer);
+        template.images.add('logo', logoBuffer);
+      }
+
+      // Add fields
+      template.primaryFields.add({
+        key: 'points',
+        label: 'Points',
+        value: '0',
+      });
+
+      // Add barcode
+      template.barcodes = [{
+        message: `card-${card.id}`,
+        format: 'PKBarcodeFormatQR',
+        messageEncoding: 'iso-8859-1',
+      }];
+
+      // Generate and send pass
+      const buffer = await template.sign();
+      
+      res.set({
+        'Content-Type': 'application/vnd.apple.pkpass',
+        'Content-disposition': `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
+      });
+      res.send(buffer);
+
+    } catch (error: any) {
+      console.error('Error generating wallet pass:', error);
+      res.status(500).json({ 
+        message: "Failed to generate wallet pass",
+        error: error.message
+      });
+    }
+  });
+
+  // Generate wallet pass for existing card (POST for manual downloads)
   app.post("/api/cards/:id/wallet-pass", async (req, res) => {
     try {
       const businessId = 1; // TODO: Get from auth
@@ -485,6 +570,46 @@ export function registerRoutes(app: Express): Server {
         message: "Failed to generate pass",
         details: error.message
       });
+    }
+  });
+
+  // Web endpoint for Apple Wallet pass download (for QR codes)
+  app.get("/wallet/:cardId", async (req, res) => {
+    try {
+      const cardId = parseInt(req.params.cardId);
+      
+      // Check if card exists
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.id, cardId),
+      });
+
+      if (!card) {
+        return res.status(404).send(`
+          <!DOCTYPE html>
+          <html>
+            <head><title>Card Not Found</title></head>
+            <body>
+              <h1>Card not found</h1>
+              <p>The loyalty card you're looking for doesn't exist.</p>
+            </body>
+          </html>
+        `);
+      }
+
+      // Redirect to the wallet pass download
+      res.redirect(`/api/cards/${cardId}/wallet-pass`);
+    } catch (error) {
+      console.error('Error in wallet redirect:', error);
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+          <head><title>Error</title></head>
+          <body>
+            <h1>Error</h1>
+            <p>Unable to load wallet pass. Please try again later.</p>
+          </body>
+        </html>
+      `);
     }
   });
 
