@@ -375,14 +375,18 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      // Simple test response to verify QR code and redirect flow
-      res.status(200).json({
-        message: "QR code and redirect working correctly",
-        cardName: card.name,
-        cardId: cardId,
-        status: "Certificate configuration in progress",
-        nextStep: "Apple Wallet pass will be generated once certificates are properly formatted"
+      // Import the pass service at the top and use it here
+      const { generateAppleWalletPass } = await import('./services/passService');
+      
+      // Generate the pass buffer
+      const passBuffer = await generateAppleWalletPass(card, `card-${cardId}-${Date.now()}`);
+
+      // Send pass file
+      res.set({
+        "Content-Type": "application/vnd.apple.pkpass",
+        "Content-disposition": `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
       });
+      res.send(passBuffer);
 
     } catch (error: any) {
       console.error("Error generating pass:", error);
