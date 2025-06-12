@@ -1,1 +1,1 @@
-{"message":"Failed to generate pass","error":"Failed to generate Apple Wallet pass: require is not defined"}
+{"message":"Failed to generate pass","error":"Failed to generate Apple Wallet pass: ValidationError happened. Invalid certificate(s) loaded. \"wwdr\" is required. Please provide valid WWDR certificates and developer signer certificate and key (with passphrase).\nRefer to docs to obtain them"}
