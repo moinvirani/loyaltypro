@@ -231,7 +231,36 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         }
         
         if (!signature) {
-          throw new Error('All private key formats failed - invalid key data');
+          // Try with OpenSSL as final fallback
+          try {
+            console.log('Attempting OpenSSL fallback...');
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Write key to temp file for OpenSSL
+            const tempKeyPath = `/tmp/temp-key-${Date.now()}.pem`;
+            fs.writeFileSync(tempKeyPath, keyData);
+            
+            // Create signature with OpenSSL
+            const manifestPath = `/tmp/manifest-${Date.now()}.json`;
+            fs.writeFileSync(manifestPath, manifestData);
+            
+            const signaturePath = `/tmp/signature-${Date.now()}.bin`;
+            execSync(`openssl dgst -sha1 -sign ${tempKeyPath} -out ${signaturePath} ${manifestPath}`);
+            
+            signature = fs.readFileSync(signaturePath);
+            console.log(`OpenSSL signature created (${signature.length} bytes)`);
+            
+            // Cleanup
+            fs.unlinkSync(tempKeyPath);
+            fs.unlinkSync(manifestPath);
+            fs.unlinkSync(signaturePath);
+            
+          } catch (opensslError) {
+            console.log('OpenSSL fallback failed:', (opensslError as Error).message);
+            throw new Error('All signing methods failed - certificate/key format incompatible');
+          }
         }
         
         fs.writeFileSync(path.join(buildDir, 'signature'), signature);
