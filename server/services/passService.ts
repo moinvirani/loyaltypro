@@ -1,5 +1,6 @@
 import type { LoyaltyCard } from '@db/schema';
 import { createHash } from 'crypto';
+import * as forge from 'node-forge';
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
@@ -83,19 +84,20 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       await fs.writeFile(`${tempDir}/key.pem`, process.env.APPLE_SIGNING_KEY);
       await fs.writeFile(`${tempDir}/wwdr.pem`, process.env.APPLE_WWDR_CERT);
       
-      // Create comprehensive certificate chain for iOS validation
-      const fullCertChain = process.env.APPLE_SIGNING_CERT + '\n' + process.env.APPLE_WWDR_CERT;
-      await fs.writeFile(`${tempDir}/fullchain.pem`, fullCertChain);
+      // Create certificate chain in proper order for iOS validation
+      const certChain = process.env.APPLE_WWDR_CERT + '\n' + process.env.APPLE_SIGNING_CERT;
+      await fs.writeFile(`${tempDir}/chain.pem`, certChain);
       
-      // Use OpenSSL with production parameters for iOS compatibility
+      // Use OpenSSL with exact parameters for Apple Wallet compatibility
       const opensslArgs = [
-        'smime', '-sign', '-binary', '-nodetach', '-noattr',
+        'smime', '-sign', '-binary', '-nodetach',
         '-signer', `${tempDir}/cert.pem`,
         '-inkey', `${tempDir}/key.pem`,
-        '-certfile', `${tempDir}/fullchain.pem`,
+        '-certfile', `${tempDir}/wwdr.pem`,
         '-in', `${tempDir}/manifest.json`,
         '-out', `${tempDir}/signature`,
-        '-outform', 'DER'
+        '-outform', 'DER',
+        '-md', 'sha1'
       ];
       
       console.log('Executing OpenSSL signing for iOS validation...');
@@ -119,22 +121,70 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       }
       
     } catch (opensslError) {
-      console.warn('OpenSSL approach failed, using Node.js crypto fallback:', opensslError);
+      console.log('Switching to node-forge for proper PKCS#7 signature...');
       
-      // Fallback to Node.js crypto with proper key handling
-      const crypto = await import('crypto');
-      const sign = crypto.createSign('SHA1');
-      sign.update(manifestContent);
-      
+      // Use node-forge to create iOS-compatible PKCS#7 signature
       try {
-        signature = sign.sign(process.env.APPLE_SIGNING_KEY);
-        console.log('Signed with Node.js crypto (original key format)');
-      } catch (keyError) {
-        // Try reformatting the private key
-        const cleanKey = process.env.APPLE_SIGNING_KEY.replace(/-----[^-]*-----/g, '').replace(/\s/g, '');
-        const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey}\n-----END PRIVATE KEY-----`;
-        signature = sign.sign(formattedKey);
-        console.log('Signed with Node.js crypto (formatted key)');
+        console.log('Parsing certificates with node-forge...');
+        const signingCert = forge.pki.certificateFromPem(process.env.APPLE_SIGNING_CERT);
+        const wwdrCert = forge.pki.certificateFromPem(process.env.APPLE_WWDR_CERT);
+        const privateKey = forge.pki.privateKeyFromPem(process.env.APPLE_SIGNING_KEY);
+        
+        console.log('Creating PKCS#7 signed data structure...');
+        const p7 = forge.pkcs7.createSignedData();
+        p7.content = forge.util.createBuffer(manifestContent, 'utf8');
+        
+        // Add signer with proper attributes for Apple Wallet
+        p7.addSigner({
+          key: privateKey,
+          certificate: signingCert,
+          digestAlgorithm: forge.pki.oids.sha1,
+          authenticatedAttributes: [
+            {
+              type: forge.pki.oids.contentTypes,
+              value: forge.pki.oids.data
+            },
+            {
+              type: forge.pki.oids.messageDigest
+            },
+            {
+              type: forge.pki.oids.signingTime,
+              value: new Date()
+            }
+          ]
+        });
+        
+        // Add certificate chain in correct order for iOS validation
+        p7.addCertificate(signingCert);
+        p7.addCertificate(wwdrCert);
+        
+        console.log('Signing PKCS#7 data...');
+        p7.sign({ detached: false });
+        
+        // Convert to DER format that iOS expects
+        const asn1 = p7.toAsn1();
+        const der = forge.asn1.toDer(asn1).getBytes();
+        signature = Buffer.from(der, 'binary');
+        
+        console.log(`PKCS#7 signature created with node-forge (${signature.length} bytes) - iOS compatible`);
+        
+      } catch (forgeError) {
+        console.warn('Node-forge PKCS#7 certificate parsing failed:', forgeError.message);
+        
+        // Final fallback to basic crypto signing
+        const crypto = await import('crypto');
+        const sign = crypto.createSign('SHA1');
+        sign.update(manifestContent);
+        
+        try {
+          signature = sign.sign(process.env.APPLE_SIGNING_KEY);
+          console.log('Using basic crypto signature (fallback)');
+        } catch (keyError) {
+          const cleanKey = process.env.APPLE_SIGNING_KEY.replace(/-----[^-]*-----/g, '').replace(/\s/g, '');
+          const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey}\n-----END PRIVATE KEY-----`;
+          signature = sign.sign(formattedKey);
+          console.log('Using formatted crypto signature (fallback)');
+        }
       }
     } finally {
       // Clean up temporary files
