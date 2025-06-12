@@ -108,26 +108,33 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
     const manifestJson = JSON.stringify(manifest);
     zip.file('manifest.json', manifestJson);
 
-    // Create PKCS#7 signature for the manifest using OpenSSL approach
+    // Create PKCS#7 signature for the manifest
     try {
-      const crypto = await import('crypto');
+      console.log('Starting PKCS#7 signature generation...');
+      
+      // Use spawn to call OpenSSL directly for reliable PKCS#7 signing
       const { spawn } = await import('child_process');
       const fs = await import('fs/promises');
       const path = await import('path');
       
-      // Create temporary files for certificates
-      const tempDir = '/tmp';
-      const certPath = path.join(tempDir, 'signing_cert.pem');
-      const keyPath = path.join(tempDir, 'signing_key.pem');
-      const wwdrPath = path.join(tempDir, 'wwdr_cert.pem');
-      const manifestPath = path.join(tempDir, 'manifest.json');
-      const signaturePath = path.join(tempDir, 'signature');
+      // Validate and prepare certificate data
+      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
+        throw new Error('Missing required Apple certificates in environment');
+      }
+      
+      // Decode base64 certificates
+      let signingCert: string, signingKey: string, wwdrCert: string;
+      
+      try {
+        signingCert = Buffer.from(process.env.APPLE_SIGNING_CERT, 'base64').toString('utf8');
+        signingKey = Buffer.from(process.env.APPLE_SIGNING_KEY, 'base64').toString('utf8');
+        wwdrCert = Buffer.from(process.env.APPLE_WWDR_CERT, 'base64').toString('utf8');
+        console.log('Certificates decoded successfully');
+      } catch (decodeError) {
+        throw new Error(`Certificate decoding failed: ${decodeError}`);
+      }
 
-      // Format certificates properly
-      const signingCert = Buffer.from(process.env.APPLE_SIGNING_CERT, 'base64').toString();
-      const signingKey = Buffer.from(process.env.APPLE_SIGNING_KEY, 'base64').toString();
-      const wwdrCert = Buffer.from(process.env.APPLE_WWDR_CERT, 'base64').toString();
-
+      // Ensure proper PEM formatting
       const certPem = signingCert.includes('-----BEGIN') ? signingCert : 
         `-----BEGIN CERTIFICATE-----\n${signingCert}\n-----END CERTIFICATE-----`;
       const keyPem = signingKey.includes('-----BEGIN') ? signingKey :
@@ -135,63 +142,64 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       const wwdrPem = wwdrCert.includes('-----BEGIN') ? wwdrCert :
         `-----BEGIN CERTIFICATE-----\n${wwdrCert}\n-----END CERTIFICATE-----`;
 
-      // Write certificates to temporary files
-      await fs.writeFile(certPath, certPem);
-      await fs.writeFile(keyPath, keyPem);
-      await fs.writeFile(wwdrPath, wwdrPem);
-      await fs.writeFile(manifestPath, manifestJson);
+      // Create temporary directory for certificate operations
+      const tempDir = '/tmp/pass_signing';
+      await fs.mkdir(tempDir, { recursive: true });
+      
+      const certFile = path.join(tempDir, 'cert.pem');
+      const keyFile = path.join(tempDir, 'key.pem');
+      const wwdrFile = path.join(tempDir, 'wwdr.pem');
+      const manifestFile = path.join(tempDir, 'manifest.json');
+      const chainFile = path.join(tempDir, 'chain.pem');
+      const signatureFile = path.join(tempDir, 'signature');
 
-      // Import forge dynamically to avoid module conflicts
-      const forge = await import('node-forge');
+      // Write files
+      await fs.writeFile(certFile, certPem);
+      await fs.writeFile(keyFile, keyPem);
+      await fs.writeFile(wwdrFile, wwdrPem);
+      await fs.writeFile(manifestFile, manifestJson);
       
-      // Create signature using node-forge
-      const cert = forge.pki.certificateFromPem(certPem);
-      const key = forge.pki.privateKeyFromPem(keyPem);
-      const wwdr = forge.pki.certificateFromPem(wwdrPem);
-      
-      // Create PKCS#7 signature
-      const p7 = forge.pkcs7.createSignedData();
-      p7.content = forge.util.createBuffer(manifestJson);
-      p7.addCertificate(cert);
-      p7.addCertificate(wwdr);
-      p7.addSigner({
-        key: key,
-        certificate: cert,
-        digestAlgorithm: forge.pki.oids.sha1,
-        authenticatedAttributes: [
-          {
-            type: forge.pki.oids.contentTypes,
-            value: forge.pki.oids.data
-          },
-          {
-            type: forge.pki.oids.messageDigest
-          },
-          {
-            type: forge.pki.oids.signingTime,
-            value: new Date()
+      // Create certificate chain (signing cert + WWDR cert)
+      await fs.writeFile(chainFile, certPem + '\n' + wwdrPem);
+
+      // Create PKCS#7 signature using OpenSSL
+      const signProcess = spawn('openssl', [
+        'smime', '-sign', '-binary', '-nodetach',
+        '-signer', certFile,
+        '-inkey', keyFile,
+        '-certfile', wwdrFile,
+        '-in', manifestFile,
+        '-out', signatureFile,
+        '-outform', 'DER'
+      ]);
+
+      await new Promise((resolve, reject) => {
+        let stderr = '';
+        signProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        signProcess.on('close', (code) => {
+          if (code === 0) {
+            resolve(code);
+          } else {
+            reject(new Error(`OpenSSL signing failed with code ${code}: ${stderr}`));
           }
-        ]
+        });
       });
 
-      p7.sign({ detached: true });
+      // Read the signature and add to zip
+      const signatureData = await fs.readFile(signatureFile);
+      zip.file('signature', signatureData);
+
+      // Clean up
+      await fs.rm(tempDir, { recursive: true, force: true });
       
-      const signatureBytes = forge.asn1.toDer(p7.toAsn1()).getBytes();
-      zip.file('signature', Buffer.from(signatureBytes, 'binary'));
-      
-      // Clean up temporary files
-      try {
-        await fs.unlink(certPath);
-        await fs.unlink(keyPath);
-        await fs.unlink(wwdrPath);
-        await fs.unlink(manifestPath);
-      } catch (cleanupError) {
-        // Ignore cleanup errors
-      }
-      
-      console.log('Apple Wallet pass signed successfully with your certificates');
+      console.log('Apple Wallet pass signed successfully using OpenSSL with your certificates');
       
     } catch (signingError: any) {
-      console.warn('Certificate signing failed, creating unsigned pass for testing:', signingError.message);
+      console.error('PKCS#7 signing failed:', signingError.message);
+      console.log('Generating unsigned pass - iOS will reject this but structure is correct');
     }
 
     // Generate final pass file
