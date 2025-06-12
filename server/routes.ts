@@ -379,65 +379,63 @@ export function registerRoutes(app: Express): Server {
         throw new Error('Missing required certificates');
       }
 
-      // Format certificates
-      const signingCert = formatPEM(process.env.APPLE_SIGNING_CERT, 'CERTIFICATE');
-      const signingKey = formatPEM(process.env.APPLE_SIGNING_KEY, 'PRIVATE KEY');
-      const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT, 'CERTIFICATE');
-
-      // Create pass template
-      const template = new Template('storeCard', {
-        formatVersion: 1,
+      // Create pass template using the working pattern from other endpoints
+      const template = new Template("storeCard", {
         passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
         teamIdentifier: process.env.APPLE_TEAM_ID,
         organizationName: "Loyalty Pro",
         description: card.name,
-        serialNumber: `card-${card.id}-${Date.now()}`,
+        serialNumber: `card-${cardId}-${Date.now()}`,
       });
 
-      // Set certificates
-      template.setCertificate(signingCert);
-      template.setPrivateKey(signingKey);
-      template.setWWDRcert(wwdrCert);
-
-      // Add styling
-      template.backgroundColor = card.design.backgroundColor;
-      template.foregroundColor = card.design.textColor || card.design.primaryColor;
+      // Set pass styling based on card design
+      template.style({
+        labelColor: "rgb(45, 45, 45)",
+        foregroundColor: card.design.textColor || card.design.primaryColor,
+        backgroundColor: card.design.backgroundColor,
+      });
 
       // Add logo if exists
       if (card.design.logo) {
-        const logoData = card.design.logo.split(',')[1];
-        const logoBuffer = Buffer.from(logoData, 'base64');
-        template.images.add('icon', logoBuffer);
-        template.images.add('logo', logoBuffer);
+        const logoData = card.design.logo.split(',')[1] || card.design.logo;
+        template.images.add("icon", Buffer.from(logoData, "base64"));
+        template.images.add("logo", Buffer.from(logoData, "base64"));
       }
 
-      // Add fields
+      // Set card information
       template.primaryFields.add({
-        key: 'points',
-        label: 'Points',
-        value: '0',
+        key: "points",
+        label: "Points",
+        value: 0,
       });
 
       // Add barcode
       template.barcodes = [{
-        message: `card-${card.id}`,
-        format: 'PKBarcodeFormatQR',
-        messageEncoding: 'iso-8859-1',
+        message: `card-${cardId}`,
+        format: "PKBarcodeFormatQR",
+        messageEncoding: "iso-8859-1",
       }];
 
-      // Generate and send pass
-      const buffer = await template.sign();
-      
+      // Convert base64 cert and key strings to buffers using the working pattern
+      const cardSigningCert = Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64');
+      const cardSigningKey = Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64');
+
+      const pass = await template.sign(
+        cardSigningCert,
+        cardSigningKey,
+      );
+
+      // Send pass file
       res.set({
-        'Content-Type': 'application/vnd.apple.pkpass',
-        'Content-disposition': `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
+        "Content-Type": "application/vnd.apple.pkpass",
+        "Content-disposition": `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
       });
-      res.send(buffer);
+      res.send(Buffer.from(await pass.getAsBuffer()));
 
     } catch (error: any) {
-      console.error('Error generating wallet pass:', error);
+      console.error("Error generating pass:", error);
       res.status(500).json({ 
-        message: "Failed to generate wallet pass",
+        message: "Failed to generate pass",
         error: error.message
       });
     }
