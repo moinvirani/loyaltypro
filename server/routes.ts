@@ -4,7 +4,7 @@ import { db } from "@db";
 import { businesses, branches, customers, loyaltyCards, notifications } from "@db/schema";
 import { eq, count, sql, desc, and } from "drizzle-orm";
 import { processImage, validateImage } from "./services/imageService";
-import { Template } from "@destinationstransfers/passkit";
+import { generateAppleWalletPass } from "./services/passService";
 import { diagnosePassCertificates, formatPEM } from "./services/certificateService";
 
 export function registerRoutes(app: Express): Server {
@@ -375,17 +375,12 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      // Import the pass service at the top and use it here
-      const { generateAppleWalletPass } = await import('./services/passService');
-      
-      // Generate the pass buffer
+      // Generate the pass buffer using OpenSSL signing
       const passBuffer = await generateAppleWalletPass(card, `card-${cardId}-${Date.now()}`);
 
-      // Send pass file
-      res.set({
-        "Content-Type": "application/vnd.apple.pkpass",
-        "Content-disposition": `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
-      });
+      // Send pass file with proper content type
+      res.setHeader("Content-Type", "application/vnd.apple.pkpass");
+      res.setHeader("Content-disposition", `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`);
       res.send(passBuffer);
 
     } catch (error: any) {

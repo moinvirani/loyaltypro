@@ -1,6 +1,9 @@
 import type { LoyaltyCard } from '@db/schema';
-import { createHash } from 'crypto';
-const forge = require('node-forge');
+import { execSync } from "child_process";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import writeCerts from "../helpers/writeCerts";
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
@@ -11,206 +14,106 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       throw new Error('Missing required Apple Wallet configuration');
     }
 
-    console.log('Creating production Apple Wallet pass for iOS...');
+    console.log('Creating Apple Wallet pass with OpenSSL signing...');
     
     const design = card.design as any;
     const serial = serialNumber || `card-${card.id}-${Date.now()}`;
     
-    // Create pass data that exactly matches Apple's specifications
-    const passData = {
-      formatVersion: 1,
-      passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
-      serialNumber: serial,
-      teamIdentifier: process.env.APPLE_TEAM_ID,
-      organizationName: design.name || 'Loyalty Business',
-      description: `${design.name || 'Loyalty'} Card`,
-      foregroundColor: design.textColor || '#000000',
-      backgroundColor: design.backgroundColor || '#ffffff',
-      labelColor: design.textColor || '#000000',
-      logoText: design.name,
-      generic: {
-        primaryFields: [
-          {
-            key: 'balance',
-            label: 'Points',
-            value: `${design.stamps || 0}/${design.stamps || 10}`
-          }
-        ],
-        secondaryFields: [
-          {
-            key: 'name',
-            label: 'Card Name',
-            value: design.name || 'Loyalty Card'
-          }
-        ],
-        backFields: [
-          {
-            key: 'terms',
-            label: 'Terms and Conditions',
-            value: 'Present this pass to earn and redeem loyalty points. Valid at participating locations.'
-          }
-        ]
-      },
-      barcodes: [
-        {
-          message: `CUSTOMER-${card.id}`,
-          format: 'PKBarcodeFormatQR',
-          messageEncoding: 'iso-8859-1'
-        }
-      ]
-    };
-
-    const passJsonContent = JSON.stringify(passData, null, 2);
+    // Write certificates to temporary files
+    const { cert, key, wwdr } = writeCerts();
     
-    // Create manifest with SHA-1 hashes as required by iOS
-    const manifest = {
-      'pass.json': createHash('sha1').update(passJsonContent).digest('hex')
-    };
-    
-    const manifestContent = JSON.stringify(manifest, null, 2);
-    
-    // Create production PKCS#7 signature using OpenSSL with proper certificate chain
-    const fs = await import('fs/promises');
-    const { spawn } = await import('child_process');
-    const tempDir = `/tmp/production_wallet_${Date.now()}`;
-    await fs.mkdir(tempDir, { recursive: true });
-    
-    let signature: Buffer;
+    // Create temporary build directory
+    const buildDir = `/tmp/pass_${Date.now()}`;
+    fs.mkdirSync(buildDir, { recursive: true });
     
     try {
-      // Write all required files for OpenSSL
-      await fs.writeFile(`${tempDir}/manifest.json`, manifestContent);
-      await fs.writeFile(`${tempDir}/cert.pem`, process.env.APPLE_SIGNING_CERT);
-      await fs.writeFile(`${tempDir}/key.pem`, process.env.APPLE_SIGNING_KEY);
-      await fs.writeFile(`${tempDir}/wwdr.pem`, process.env.APPLE_WWDR_CERT);
-      
-      // Create certificate chain in proper order for iOS validation
-      const certChain = process.env.APPLE_WWDR_CERT + '\n' + process.env.APPLE_SIGNING_CERT;
-      await fs.writeFile(`${tempDir}/chain.pem`, certChain);
-      
-      // Use OpenSSL with exact parameters for Apple Wallet compatibility
-      const opensslArgs = [
-        'smime', '-sign', '-binary', '-nodetach',
-        '-signer', `${tempDir}/cert.pem`,
-        '-inkey', `${tempDir}/key.pem`,
-        '-certfile', `${tempDir}/wwdr.pem`,
-        '-in', `${tempDir}/manifest.json`,
-        '-out', `${tempDir}/signature`,
-        '-outform', 'DER',
-        '-md', 'sha1'
-      ];
-      
-      console.log('Executing OpenSSL signing for iOS validation...');
-      const opensslProcess = spawn('openssl', opensslArgs, { stdio: 'pipe' });
-      
-      let opensslError = '';
-      opensslProcess.stderr.on('data', (data) => {
-        opensslError += data.toString();
-      });
-      
-      const opensslResult = await new Promise<number>((resolve) => {
-        opensslProcess.on('close', resolve);
-      });
-      
-      if (opensslResult === 0) {
-        signature = await fs.readFile(`${tempDir}/signature`);
-        console.log(`OpenSSL PKCS#7 signature created successfully (${signature.length} bytes)`);
-      } else {
-        console.warn(`OpenSSL failed with exit code ${opensslResult}:`, opensslError);
-        throw new Error('OpenSSL signing failed');
-      }
-      
-    } catch (opensslError) {
-      console.log('Switching to node-forge for proper PKCS#7 signature...');
-      
-      // Use node-forge to create iOS-compatible PKCS#7 signature
-      try {
-        console.log('Parsing certificates with node-forge...');
-        const signingCert = forge.pki.certificateFromPem(process.env.APPLE_SIGNING_CERT);
-        const wwdrCert = forge.pki.certificateFromPem(process.env.APPLE_WWDR_CERT);
-        const privateKey = forge.pki.privateKeyFromPem(process.env.APPLE_SIGNING_KEY);
-        
-        console.log('Creating PKCS#7 signed data structure...');
-        const p7 = forge.pkcs7.createSignedData();
-        p7.content = forge.util.createBuffer(manifestContent, 'utf8');
-        
-        // Add signer with proper attributes for Apple Wallet
-        p7.addSigner({
-          key: privateKey,
-          certificate: signingCert,
-          digestAlgorithm: forge.pki.oids.sha1,
-          authenticatedAttributes: [
+      // Create pass data that exactly matches Apple's specifications
+      const passData = {
+        formatVersion: 1,
+        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+        serialNumber: serial,
+        teamIdentifier: process.env.APPLE_TEAM_ID,
+        organizationName: design.name || 'Loyalty Business',
+        description: `${design.name || 'Loyalty'} Card`,
+        foregroundColor: design.textColor || '#000000',
+        backgroundColor: design.backgroundColor || '#ffffff',
+        labelColor: design.textColor || '#000000',
+        logoText: design.name,
+        generic: {
+          primaryFields: [
             {
-              type: forge.pki.oids.contentTypes,
-              value: forge.pki.oids.data
-            },
+              key: 'balance',
+              label: 'Points',
+              value: `${design.stamps || 0}/${design.stamps || 10}`
+            }
+          ],
+          secondaryFields: [
             {
-              type: forge.pki.oids.messageDigest
-            },
+              key: 'name',
+              label: 'Card Name',
+              value: design.name || 'Loyalty Card'
+            }
+          ],
+          backFields: [
             {
-              type: forge.pki.oids.signingTime,
-              value: new Date()
+              key: 'terms',
+              label: 'Terms and Conditions',
+              value: 'Present this pass to earn and redeem loyalty points. Valid at participating locations.'
             }
           ]
-        });
-        
-        // Add certificate chain in correct order for iOS validation
-        p7.addCertificate(signingCert);
-        p7.addCertificate(wwdrCert);
-        
-        console.log('Signing PKCS#7 data...');
-        p7.sign({ detached: false });
-        
-        // Convert to DER format that iOS expects
-        const asn1 = p7.toAsn1();
-        const der = forge.asn1.toDer(asn1).getBytes();
-        signature = Buffer.from(der, 'binary');
-        
-        console.log(`PKCS#7 signature created with node-forge (${signature.length} bytes) - iOS compatible`);
-        
-      } catch (forgeError) {
-        console.warn('Node-forge PKCS#7 certificate parsing failed:', forgeError.message);
-        
-        // Final fallback to basic crypto signing
-        const crypto = await import('crypto');
-        const sign = crypto.createSign('SHA1');
-        sign.update(manifestContent);
-        
-        try {
-          signature = sign.sign(process.env.APPLE_SIGNING_KEY);
-          console.log('Using basic crypto signature (fallback)');
-        } catch (keyError) {
-          const cleanKey = process.env.APPLE_SIGNING_KEY.replace(/-----[^-]*-----/g, '').replace(/\s/g, '');
-          const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey}\n-----END PRIVATE KEY-----`;
-          signature = sign.sign(formattedKey);
-          console.log('Using formatted crypto signature (fallback)');
-        }
+        },
+        barcodes: [
+          {
+            message: `CUSTOMER-${card.id}`,
+            format: 'PKBarcodeFormatQR',
+            messageEncoding: 'iso-8859-1'
+          }
+        ]
+      };
+
+      // Write pass.json to build directory
+      const passJsonContent = JSON.stringify(passData, null, 2);
+      fs.writeFileSync(path.join(buildDir, 'pass.json'), passJsonContent);
+      
+      // Compute SHA1 hashes for every file -> manifest.json
+      const manifest: Record<string, string> = {};
+      for (const f of fs.readdirSync(buildDir)) {
+        manifest[f] = crypto.createHash("sha1").update(fs.readFileSync(path.join(buildDir, f))).digest("hex");
       }
-    } finally {
-      // Clean up temporary files
+      fs.writeFileSync(path.join(buildDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+
+      // OpenSSL sign
+      execSync(`openssl smime -binary -sign -signer ${cert} -inkey ${key} -certfile ${wwdr} -in manifest.json -out signature -outform DER -nodetach -noattr`, 
+               { cwd: buildDir });
+
+      // Zip everything -> Buffer
+      const zipName = `/tmp/${serial}.pkpass`;
+      execSync(`zip -r -q ${zipName} .`, { cwd: buildDir });
+      
+      // Log files in pkpass for verification
       try {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      } catch (cleanupError) {
-        console.warn('Cleanup failed:', cleanupError);
+        const zipContents = execSync(`unzip -l ${zipName}`, { encoding: 'utf8' });
+        console.log('Files in pkpass:', zipContents);
+      } catch (zipError) {
+        console.warn('Could not list zip contents:', zipError);
       }
+      
+      const passBuffer = fs.readFileSync(zipName);
+      
+      // Clean up
+      fs.rmSync(buildDir, { recursive: true, force: true });
+      fs.unlinkSync(zipName);
+      
+      console.log(`Apple Wallet pass created with OpenSSL (${passBuffer.length} bytes)`);
+      return passBuffer;
+      
+    } catch (buildError) {
+      // Clean up on error
+      if (fs.existsSync(buildDir)) {
+        fs.rmSync(buildDir, { recursive: true, force: true });
+      }
+      throw buildError;
     }
-    
-    // Create final .pkpass ZIP file for iOS
-    const JSZip = (await import('jszip')).default;
-    const zip = new JSZip();
-    
-    zip.file('pass.json', passJsonContent);
-    zip.file('manifest.json', manifestContent);
-    zip.file('signature', signature);
-    
-    const passBuffer = await zip.generateAsync({
-      type: 'nodebuffer',
-      compression: 'DEFLATE',
-      compressionOptions: { level: 6 }
-    });
-    
-    console.log(`Production Apple Wallet pass created (${passBuffer.length} bytes) - Ready for iOS`);
-    return passBuffer;
     
   } catch (error: any) {
     console.error('Apple Wallet pass generation failed:', error.message);
