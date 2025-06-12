@@ -151,34 +151,71 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         console.log('Creating fallback signature with multiple key format attempts...');
         
         const keyData = process.env.APPLE_SIGNING_KEY!;
+        
+        // Diagnostic information about the key
+        console.log('Key diagnostic info:');
+        console.log('- Key length:', keyData.length);
+        console.log('- Key starts with:', keyData.substring(0, 50));
+        console.log('- Key ends with:', keyData.substring(keyData.length - 50));
+        console.log('- Contains BEGIN:', keyData.includes('-----BEGIN'));
+        console.log('- Contains END:', keyData.includes('-----END'));
+        
         const sign = crypto.createSign('SHA1');
         sign.update(manifestData);
         
         let signature: Buffer | null = null;
         
+        // Validate key data first
+        if (!keyData || keyData.length < 100) {
+          throw new Error('Private key data is missing or too short');
+        }
+        
         // Try multiple key formats to handle different certificate types
-        const keyFormats = [
-          // Original format
-          keyData,
-          // PKCS#8 format
-          keyData.replace(/-----BEGIN.*PRIVATE KEY-----/, '-----BEGIN PRIVATE KEY-----')
-                .replace(/-----END.*PRIVATE KEY-----/, '-----END PRIVATE KEY-----'),
-          // RSA format
-          keyData.replace(/-----BEGIN.*PRIVATE KEY-----/, '-----BEGIN RSA PRIVATE KEY-----')
-                .replace(/-----END.*PRIVATE KEY-----/, '-----END RSA PRIVATE KEY-----'),
-          // Clean and reformat
-          (() => {
-            const clean = keyData.replace(/\s+/g, '').replace(/-----[^-]*-----/g, '');
+        const keyFormats = [];
+        
+        // Original format
+        keyFormats.push(keyData);
+        
+        // Try to fix common formatting issues
+        if (keyData.includes('-----BEGIN') && keyData.includes('-----END')) {
+          // Standard PEM formats
+          keyFormats.push(
+            keyData.replace(/-----BEGIN.*PRIVATE KEY-----/, '-----BEGIN PRIVATE KEY-----')
+                  .replace(/-----END.*PRIVATE KEY-----/, '-----END PRIVATE KEY-----')
+          );
+          keyFormats.push(
+            keyData.replace(/-----BEGIN.*PRIVATE KEY-----/, '-----BEGIN RSA PRIVATE KEY-----')
+                  .replace(/-----END.*PRIVATE KEY-----/, '-----END RSA PRIVATE KEY-----')
+          );
+          keyFormats.push(
+            keyData.replace(/-----BEGIN.*PRIVATE KEY-----/, '-----BEGIN EC PRIVATE KEY-----')
+                  .replace(/-----END.*PRIVATE KEY-----/, '-----END EC PRIVATE KEY-----')
+          );
+        }
+        
+        // Extract base64 content and reformat
+        const base64Match = keyData.match(/-----BEGIN[^-]*-----\s*([A-Za-z0-9+/=\s]+)\s*-----END[^-]*-----/);
+        if (base64Match && base64Match[1]) {
+          const clean = base64Match[1].replace(/\s+/g, '');
+          if (clean.length > 100) {
             const lines = clean.match(/.{1,64}/g) || [];
-            return `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
-          })(),
-          // Clean and reformat as RSA
-          (() => {
-            const clean = keyData.replace(/\s+/g, '').replace(/-----[^-]*-----/g, '');
-            const lines = clean.match(/.{1,64}/g) || [];
-            return `-----BEGIN RSA PRIVATE KEY-----\n${lines.join('\n')}\n-----END RSA PRIVATE KEY-----`;
-          })()
-        ];
+            keyFormats.push(`-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`);
+            keyFormats.push(`-----BEGIN RSA PRIVATE KEY-----\n${lines.join('\n')}\n-----END RSA PRIVATE KEY-----`);
+            keyFormats.push(`-----BEGIN EC PRIVATE KEY-----\n${lines.join('\n')}\n-----END EC PRIVATE KEY-----`);
+          }
+        }
+        
+        // Try base64 decode and re-encode if needed
+        try {
+          const decoded = Buffer.from(keyData, 'base64');
+          if (decoded.length > 100) {
+            const encoded = decoded.toString('base64');
+            const lines = encoded.match(/.{1,64}/g) || [];
+            keyFormats.push(`-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`);
+          }
+        } catch (e) {
+          // Not base64, continue
+        }
         
         for (let i = 0; i < keyFormats.length; i++) {
           try {
