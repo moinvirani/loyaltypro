@@ -132,24 +132,38 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         const rawWwdr = process.env.APPLE_WWDR_CERT;
         
         if (rawCert?.includes('-----BEGIN')) {
+          // Already PEM formatted
           certPem = rawCert;
           keyPem = rawKey!;
           wwdrPem = rawWwdr!;
           console.log('Using PEM formatted certificates directly');
         } else {
-          // Decode from base64
-          const signingCert = Buffer.from(rawCert!, 'base64').toString('utf8');
-          const signingKey = Buffer.from(rawKey!, 'base64').toString('utf8');
-          const wwdrCert = Buffer.from(rawWwdr!, 'base64').toString('utf8');
-          
-          // Format as PEM
-          certPem = signingCert.includes('-----BEGIN') ? signingCert : 
-            `-----BEGIN CERTIFICATE-----\n${signingCert.replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----`;
-          keyPem = signingKey.includes('-----BEGIN') ? signingKey :
-            `-----BEGIN PRIVATE KEY-----\n${signingKey.replace(/(.{64})/g, '$1\n')}\n-----END PRIVATE KEY-----`;
-          wwdrPem = wwdrCert.includes('-----BEGIN') ? wwdrCert :
-            `-----BEGIN CERTIFICATE-----\n${wwdrCert.replace(/(.{64})/g, '$1\n')}\n-----END CERTIFICATE-----`;
-          console.log('Decoded and formatted certificates from base64');
+          // Try to decode as base64 and handle different formats
+          try {
+            const signingCert = Buffer.from(rawCert!, 'base64').toString('utf8');
+            const signingKey = Buffer.from(rawKey!, 'base64').toString('utf8');
+            const wwdrCert = Buffer.from(rawWwdr!, 'base64').toString('utf8');
+            
+            // Check if decoded content is already PEM formatted
+            if (signingCert.includes('-----BEGIN')) {
+              certPem = signingCert;
+              keyPem = signingKey;
+              wwdrPem = wwdrCert;
+              console.log('Decoded base64 to PEM formatted certificates');
+            } else {
+              // Raw certificate data - need to format as PEM with proper line breaks
+              certPem = `-----BEGIN CERTIFICATE-----\n${signingCert.replace(/(.{64})/g, '$1\n').trim()}\n-----END CERTIFICATE-----`;
+              keyPem = `-----BEGIN PRIVATE KEY-----\n${signingKey.replace(/(.{64})/g, '$1\n').trim()}\n-----END PRIVATE KEY-----`;
+              wwdrPem = `-----BEGIN CERTIFICATE-----\n${wwdrCert.replace(/(.{64})/g, '$1\n').trim()}\n-----END CERTIFICATE-----`;
+              console.log('Formatted raw certificate data as PEM');
+            }
+          } catch (b64Error) {
+            // Try treating as raw PEM data
+            certPem = rawCert!;
+            keyPem = rawKey!;
+            wwdrPem = rawWwdr!;
+            console.log('Using certificates as raw data');
+          }
         }
       } catch (certError) {
         throw new Error(`Certificate processing failed: ${certError}`);
