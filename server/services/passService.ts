@@ -1,6 +1,6 @@
 
 import type { LoyaltyCard } from '@db/schema';
-import { Template } from 'passkit-generator';
+import PKPass from 'passkit-generator';
 import { formatPEM } from './certificateService';
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
@@ -18,55 +18,59 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
     const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT, 'CERTIFICATE');
 
     // Create pass template
-    const template = new Template('storeCard', {
-      formatVersion: 1,
-      passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
-      teamIdentifier: process.env.APPLE_TEAM_ID,
-      organizationName: "Loyalty Pro",
-      description: card.name,
-      serialNumber: serialNumber || `card-${card.id}`,
-    });
-
-    // Set certificates
-    template.setCertificate(signingCert);
-    template.setPrivateKey(signingKey);
-    template.setWWDRcert(wwdrCert);
-
-    // Apply card design
-    template.backgroundColor = card.design.backgroundColor;
-    template.foregroundColor = card.design.primaryColor;
+    const pass = new PKPass(
+      {
+        'pass.json': {
+          formatVersion: 1,
+          passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+          teamIdentifier: process.env.APPLE_TEAM_ID,
+          organizationName: "Loyalty Pro",
+          description: card.name,
+          serialNumber: serialNumber || `card-${card.id}`,
+          storeCard: {
+            primaryFields: [
+              {
+                key: 'points',
+                label: 'Points',
+                value: '0',
+              }
+            ],
+            secondaryFields: [
+              {
+                key: 'cardName',
+                label: 'Card',
+                value: card.name,
+              }
+            ]
+          },
+          backgroundColor: card.design.backgroundColor,
+          foregroundColor: card.design.primaryColor,
+          barcodes: [
+            {
+              message: serialNumber || `card-${card.id}`,
+              format: 'PKBarcodeFormatQR',
+              messageEncoding: 'iso-8859-1',
+            }
+          ]
+        }
+      },
+      {
+        signerCert: signingCert,
+        signerKey: signingKey,
+        wwdr: wwdrCert,
+      }
+    );
 
     // Add logo if exists
     if (card.design.logo) {
       const logoData = card.design.logo.split(',')[1];
       const logoBuffer = Buffer.from(logoData, 'base64');
-      template.images.add('icon', logoBuffer);
-      template.images.add('logo', logoBuffer);
+      pass.images.add('icon', logoBuffer);
+      pass.images.add('logo', logoBuffer);
     }
 
-    // Add primary fields
-    template.primaryFields.add({
-      key: 'points',
-      label: 'Points',
-      value: '0',
-    });
-
-    // Add secondary fields if needed
-    template.secondaryFields.add({
-      key: 'cardName',
-      label: 'Card',
-      value: card.name,
-    });
-
-    // Add barcode for scanning
-    template.barcodes = [{
-      message: serialNumber || `card-${card.id}`,
-      format: 'PKBarcodeFormatQR',
-      messageEncoding: 'iso-8859-1',
-    }];
-
     // Generate and return the signed pass buffer
-    const passBuffer = await template.sign();
+    const passBuffer = await pass.asBuffer();
     return passBuffer;
 
   } catch (error: any) {
