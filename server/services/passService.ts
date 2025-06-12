@@ -1,26 +1,21 @@
 import type { LoyaltyCard } from '@db/schema';
-import { execSync } from "child_process";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import writeCerts from "../helpers/writeCerts";
+import { execSync } from "child_process";
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
     // Validate required environment variables
     if (!process.env.APPLE_PASS_TYPE_ID || !process.env.APPLE_TEAM_ID || 
-        !process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || 
-        !process.env.APPLE_WWDR_CERT) {
+        !process.env.APPLE_SIGNING_KEY) {
       throw new Error('Missing required Apple Wallet configuration');
     }
 
-    console.log('Creating Apple Wallet pass with OpenSSL signing...');
+    console.log('Creating Apple Wallet pass with Node.js crypto signing...');
     
     const design = card.design as any;
     const serial = serialNumber || `card-${card.id}-${Date.now()}`;
-    
-    // Write certificates to temporary files
-    const { cert, key, wwdr } = writeCerts();
     
     // Create temporary build directory
     const buildDir = `/tmp/pass_${Date.now()}`;
@@ -82,23 +77,31 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       }
       fs.writeFileSync(path.join(buildDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 
-      // OpenSSL sign with error handling
+      // Create signature with Node.js crypto
+      console.log('Creating signature with Node.js crypto...');
+      const manifestData = fs.readFileSync(path.join(buildDir, 'manifest.json'));
+      
+      // Get private key from environment
+      let privateKeyData = process.env.APPLE_SIGNING_KEY!;
+      
+      // Create signature using SHA1 (required by Apple Wallet)
+      const sign = crypto.createSign('SHA1');
+      sign.update(manifestData);
+      
+      let signature: Buffer;
       try {
-        execSync(`openssl smime -binary -sign -signer ${cert} -inkey ${key} -certfile ${wwdr} -in manifest.json -out signature -outform DER -nodetach -noattr`, 
-                 { cwd: buildDir, stdio: 'pipe' });
-      } catch (opensslError: any) {
-        console.error('OpenSSL signing failed:', opensslError.message);
-        
-        // Try alternative signing without WWDR cert first
-        try {
-          console.log('Retrying OpenSSL without separate WWDR cert...');
-          execSync(`openssl smime -binary -sign -signer ${cert} -inkey ${key} -in manifest.json -out signature -outform DER -nodetach -noattr`, 
-                   { cwd: buildDir, stdio: 'pipe' });
-        } catch (fallbackError: any) {
-          console.error('OpenSSL fallback also failed:', fallbackError.message);
-          throw new Error(`OpenSSL signing failed: ${opensslError.message}`);
-        }
+        signature = sign.sign(privateKeyData);
+        console.log('Signature created with original key format');
+      } catch (keyError) {
+        // Try reformatting the key
+        const cleanKey = privateKeyData.replace(/-----[^-]*-----/g, '').replace(/\s/g, '');
+        const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey.match(/.{1,64}/g)?.join('\n')}\n-----END PRIVATE KEY-----`;
+        signature = sign.sign(formattedKey);
+        console.log('Signature created with reformatted key');
       }
+      
+      fs.writeFileSync(path.join(buildDir, 'signature'), signature);
+      console.log(`Signature written (${signature.length} bytes)`);
 
       // Zip everything -> Buffer
       const zipName = `/tmp/${serial}.pkpass`;
@@ -118,7 +121,7 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       fs.rmSync(buildDir, { recursive: true, force: true });
       fs.unlinkSync(zipName);
       
-      console.log(`Apple Wallet pass created with OpenSSL (${passBuffer.length} bytes)`);
+      console.log(`Apple Wallet pass created with Node.js crypto (${passBuffer.length} bytes)`);
       return passBuffer;
       
     } catch (buildError) {

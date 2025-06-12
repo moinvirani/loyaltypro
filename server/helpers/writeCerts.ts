@@ -15,21 +15,27 @@ export default function writeCerts() {
   const keyPath = '/tmp/pass-key.pem';
   const wwdrPath = '/tmp/AppleWWDRCA.pem';
 
-  // Ensure certificates have proper PEM formatting
-  let formattedCert = cert.trim();
-  if (!formattedCert.startsWith('-----BEGIN CERTIFICATE-----')) {
-    formattedCert = `-----BEGIN CERTIFICATE-----\n${formattedCert}\n-----END CERTIFICATE-----`;
+  // Advanced certificate formatting with proper line breaks
+  function formatCertificate(certData: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string {
+    // Remove all whitespace and line breaks
+    let clean = certData.replace(/\s+/g, '');
+    
+    // Remove existing headers/footers
+    clean = clean.replace(/-----BEGIN[^-]*-----/g, '').replace(/-----END[^-]*-----/g, '');
+    
+    // Add proper line breaks every 64 characters
+    const lines = [];
+    for (let i = 0; i < clean.length; i += 64) {
+      lines.push(clean.substring(i, i + 64));
+    }
+    
+    const formattedContent = lines.join('\n');
+    return `-----BEGIN ${type}-----\n${formattedContent}\n-----END ${type}-----`;
   }
 
-  let formattedKey = key.trim();
-  if (!formattedKey.startsWith('-----BEGIN PRIVATE KEY-----') && !formattedKey.startsWith('-----BEGIN RSA PRIVATE KEY-----')) {
-    formattedKey = `-----BEGIN PRIVATE KEY-----\n${formattedKey}\n-----END PRIVATE KEY-----`;
-  }
-
-  let formattedWwdr = wwdr.trim();
-  if (!formattedWwdr.startsWith('-----BEGIN CERTIFICATE-----')) {
-    formattedWwdr = `-----BEGIN CERTIFICATE-----\n${formattedWwdr}\n-----END CERTIFICATE-----`;
-  }
+  let formattedCert = formatCertificate(cert, 'CERTIFICATE');
+  let formattedKey = formatCertificate(key, 'PRIVATE KEY');
+  let formattedWwdr = formatCertificate(wwdr, 'CERTIFICATE');
 
   fs.writeFileSync(certPath, formattedCert);
   fs.writeFileSync(keyPath, formattedKey);
