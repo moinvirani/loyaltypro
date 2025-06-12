@@ -1,0 +1,1 @@
+{"message":"Failed to generate pass","error":"Failed to create Apple Wallet pass: Command failed: openssl smime -binary -sign -signer /tmp/pass-cert.pem -inkey /tmp/pass-key.pem -certfile /tmp/AppleWWDRCA.pem -in manifest.json -out signature -outform DER -nodetach -noattr\nCould not read any certificates from /tmp/AppleWWDRCA.pem\n"}

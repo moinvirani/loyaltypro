@@ -10,14 +10,35 @@ export default function writeCerts() {
     throw new Error('Missing required Apple certificates in environment variables');
   }
 
-  // Write certificates to temporary files
+  // Write certificates to temporary files with proper formatting
   const certPath = '/tmp/pass-cert.pem';
   const keyPath = '/tmp/pass-key.pem';
   const wwdrPath = '/tmp/AppleWWDRCA.pem';
 
-  fs.writeFileSync(certPath, cert);
-  fs.writeFileSync(keyPath, key);
-  fs.writeFileSync(wwdrPath, wwdr);
+  // Ensure certificates have proper PEM formatting
+  let formattedCert = cert.trim();
+  if (!formattedCert.startsWith('-----BEGIN CERTIFICATE-----')) {
+    formattedCert = `-----BEGIN CERTIFICATE-----\n${formattedCert}\n-----END CERTIFICATE-----`;
+  }
+
+  let formattedKey = key.trim();
+  if (!formattedKey.startsWith('-----BEGIN PRIVATE KEY-----') && !formattedKey.startsWith('-----BEGIN RSA PRIVATE KEY-----')) {
+    formattedKey = `-----BEGIN PRIVATE KEY-----\n${formattedKey}\n-----END PRIVATE KEY-----`;
+  }
+
+  let formattedWwdr = wwdr.trim();
+  if (!formattedWwdr.startsWith('-----BEGIN CERTIFICATE-----')) {
+    formattedWwdr = `-----BEGIN CERTIFICATE-----\n${formattedWwdr}\n-----END CERTIFICATE-----`;
+  }
+
+  fs.writeFileSync(certPath, formattedCert);
+  fs.writeFileSync(keyPath, formattedKey);
+  fs.writeFileSync(wwdrPath, formattedWwdr);
+
+  console.log('Certificates written to temporary files:');
+  console.log('- Signing cert:', certPath, '(' + fs.statSync(certPath).size + ' bytes)');
+  console.log('- Private key:', keyPath, '(' + fs.statSync(keyPath).size + ' bytes)');
+  console.log('- WWDR cert:', wwdrPath, '(' + fs.statSync(wwdrPath).size + ' bytes)');
 
   return {
     cert: certPath,

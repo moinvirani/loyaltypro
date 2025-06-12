@@ -6,6 +6,8 @@ import { eq, count, sql, desc, and } from "drizzle-orm";
 import { processImage, validateImage } from "./services/imageService";
 import { generateAppleWalletPass } from "./services/passService";
 import { diagnosePassCertificates, formatPEM } from "./services/certificateService";
+import { execSync } from "child_process";
+import writeCerts from "./helpers/writeCerts";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -701,6 +703,45 @@ export function registerRoutes(app: Express): Server {
         message: "Failed to validate certificates",
         error: error.message
       });
+    }
+  });
+
+  // Test certificate validation
+  app.get("/api/test/certificates", async (req, res) => {
+    try {
+      const { cert, key, wwdr } = writeCerts();
+      
+      const results = {
+        signingCert: { path: cert, valid: false, error: null as string | null },
+        privateKey: { path: key, valid: false, error: null as string | null },
+        wwdrCert: { path: wwdr, valid: false, error: null as string | null }
+      };
+      
+      try {
+        execSync(`openssl x509 -in ${cert} -noout -text`, { stdio: 'pipe' });
+        results.signingCert.valid = true;
+      } catch (error: any) {
+        results.signingCert.error = error.message;
+      }
+      
+      try {
+        execSync(`openssl rsa -in ${key} -noout -check`, { stdio: 'pipe' });
+        results.privateKey.valid = true;
+      } catch (error: any) {
+        results.privateKey.error = error.message;
+      }
+      
+      try {
+        execSync(`openssl x509 -in ${wwdr} -noout -text`, { stdio: 'pipe' });
+        results.wwdrCert.valid = true;
+      } catch (error: any) {
+        results.wwdrCert.error = error.message;
+      }
+      
+      res.json(results);
+      
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 
