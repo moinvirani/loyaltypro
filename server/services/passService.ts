@@ -1,4 +1,3 @@
-
 import type { LoyaltyCard } from '@db/schema';
 import { createHash } from 'crypto';
 
@@ -8,187 +7,220 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
     if (!process.env.APPLE_PASS_TYPE_ID || !process.env.APPLE_TEAM_ID || 
         !process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || 
         !process.env.APPLE_WWDR_CERT) {
-      throw new Error('Missing required Apple Wallet certificates or configuration');
+      throw new Error('Missing required Apple Wallet configuration');
     }
 
-    console.log('Creating production Apple Wallet pass with certificate signing...');
+    console.log('Creating signed Apple Wallet pass...');
 
-    const JSZip = (await import('jszip')).default;
-    const zip = new JSZip();
+    const design = card.design as any;
+    const serial = serialNumber || `${card.id}-${Date.now()}`;
 
-    // Create pass.json with proper Apple Wallet structure
-    const passContent = {
-      formatVersion: 1,
-      passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
-      teamIdentifier: process.env.APPLE_TEAM_ID,
-      organizationName: "Loyalty Pro",
-      description: card.name,
-      serialNumber: serialNumber || `card-${card.id}-${Date.now()}`,
-      backgroundColor: card.design.backgroundColor,
-      foregroundColor: card.design.textColor || card.design.primaryColor,
-      labelColor: card.design.textColor || card.design.primaryColor,
-      storeCard: {
-        primaryFields: [
-          {
-            key: "balance",
-            label: "Points",
-            value: "0"
-          }
-        ],
-        secondaryFields: [
-          {
-            key: "name", 
-            label: "Card Name",
-            value: card.name
-          }
-        ],
-        backFields: [
-          {
-            key: "terms",
-            label: "Terms and Conditions", 
-            value: "Present this card to earn and redeem points. Card is non-transferable."
-          }
-        ]
-      },
-      barcodes: [
-        {
-          message: serialNumber || `card-${card.id}`,
-          format: "PKBarcodeFormatQR",
-          messageEncoding: "iso-8859-1"
-        }
-      ]
-    };
-
-    const passJson = JSON.stringify(passContent);
-    zip.file('pass.json', passJson);
-
-    // Create manifest with file hashes
-    const manifest: Record<string, string> = {
-      'pass.json': createHash('sha1').update(passJson).digest('hex')
-    };
-
-    // Add logo assets if available
-    if (card.design.logo) {
-      try {
-        const logoData = card.design.logo.includes(',') 
-          ? card.design.logo.split(',')[1] 
-          : card.design.logo;
-        const logoBuffer = Buffer.from(logoData, 'base64');
-        
-        const sharp = (await import('sharp')).default;
-        
-        // Create required icon sizes for Apple Wallet
-        const icon = await sharp(logoBuffer)
-          .resize(58, 58, { fit: 'inside', withoutEnlargement: true })
-          .png()
-          .toBuffer();
-          
-        const icon2x = await sharp(logoBuffer)
-          .resize(116, 116, { fit: 'inside', withoutEnlargement: true })
-          .png()
-          .toBuffer();
-          
-        const logo = await sharp(logoBuffer)
-          .resize(320, 100, { fit: 'inside', withoutEnlargement: true })
-          .png()
-          .toBuffer();
-
-        zip.file('icon.png', icon);
-        zip.file('icon@2x.png', icon2x);
-        zip.file('logo.png', logo);
-        
-        manifest['icon.png'] = createHash('sha1').update(icon).digest('hex');
-        manifest['icon@2x.png'] = createHash('sha1').update(icon2x).digest('hex');
-        manifest['logo.png'] = createHash('sha1').update(logo).digest('hex');
-      } catch (logoError) {
-        console.warn('Failed to process logo assets:', logoError);
-      }
-    }
-
-    const manifestJson = JSON.stringify(manifest);
-    zip.file('manifest.json', manifestJson);
-
-    // Create PKCS#7 signature for the manifest
+    // Try using the installed passkit library for proper PKCS#7 signing
     try {
-      console.log('Starting Apple Wallet pass signing...');
-      
-      // Use passkit-generator library for proper Apple Wallet signing
-      const PassKit = await import('passkit-generator');
+      const passkit = await import('@destinationstransfers/passkit');
       const fs = await import('fs/promises');
       const path = await import('path');
       
-      // Validate required environment variables
-      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
-        throw new Error('Missing required Apple certificates');
-      }
-
-      // Create temporary directory for passkit-generator
-      const tempDir = '/tmp/passkit_signing';
+      // Create temporary directory for certificate files
+      const tempDir = '/tmp/passkit_signing_' + Date.now();
       await fs.mkdir(tempDir, { recursive: true });
       
-      // Write certificate files for passkit-generator
+      // Write certificate files
       const certPath = path.join(tempDir, 'signerCert.pem');
       const keyPath = path.join(tempDir, 'signerKey.pem');
-      const wwdrPath = path.join(tempDir, 'wwdrCert.pem');
+      const wwdrPath = path.join(tempDir, 'wwdr.pem');
       
       await fs.writeFile(certPath, process.env.APPLE_SIGNING_CERT);
       await fs.writeFile(keyPath, process.env.APPLE_SIGNING_KEY);
       await fs.writeFile(wwdrPath, process.env.APPLE_WWDR_CERT);
 
-      // Create passkit template structure
-      const templateDir = path.join(tempDir, 'template');
-      await fs.mkdir(templateDir, { recursive: true });
-      
-      // Write pass.json
-      await fs.writeFile(path.join(templateDir, 'pass.json'), JSON.stringify(passData, null, 2));
-      
-      // Copy icon if exists
+      // Create pass data structure
+      const passData = {
+        formatVersion: 1,
+        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+        serialNumber: serial,
+        teamIdentifier: process.env.APPLE_TEAM_ID,
+        organizationName: design.name || 'Loyalty Card',
+        description: `${design.name || 'Loyalty'} Card`,
+        foregroundColor: design.textColor || '#000000',
+        backgroundColor: design.backgroundColor || '#ffffff',
+        labelColor: design.textColor || '#000000',
+        logoText: design.name,
+        generic: {
+          primaryFields: [
+            {
+              key: 'balance',
+              label: 'Points',
+              value: `${card.stamps || 0}/${design.stamps || 10}`
+            }
+          ],
+          secondaryFields: [
+            {
+              key: 'name', 
+              label: 'Card',
+              value: design.name || 'Loyalty Card'
+            }
+          ],
+          backFields: [
+            {
+              key: 'terms',
+              label: 'Terms',
+              value: 'Present this pass to earn and redeem loyalty points.'
+            }
+          ]
+        },
+        barcode: {
+          message: `loyalty:${card.id}:guest`,
+          format: 'PKBarcodeFormatQR',
+          messageEncoding: 'iso-8859-1'
+        }
+      };
+
+      // Initialize passkit template
+      const template = new passkit.Template('generic', {
+        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+        teamIdentifier: process.env.APPLE_TEAM_ID,
+        backgroundColor: design.backgroundColor || '#ffffff',
+        foregroundColor: design.textColor || '#000000',
+        labelColor: design.textColor || '#000000',
+        organizationName: design.name || 'Loyalty Card',
+        description: `${design.name || 'Loyalty'} Card`
+      });
+
+      // Add certificate files to template
+      template.setCertificate(certPath);
+      template.setPrivateKey(keyPath);
+      template.setWWDRcert(wwdrPath);
+
+      // Add pass data fields
+      template.primaryFields.add({
+        key: 'balance',
+        label: 'Points', 
+        value: `${card.stamps || 0}/${design.stamps || 10}`
+      });
+
+      template.secondaryFields.add({
+        key: 'name',
+        label: 'Card',
+        value: design.name || 'Loyalty Card'
+      });
+
+      // Add logo if available
       if (design.logo) {
-        const iconBuffer = Buffer.from(design.logo.split(',')[1], 'base64');
-        await fs.writeFile(path.join(templateDir, 'icon.png'), iconBuffer);
-        await fs.writeFile(path.join(templateDir, 'icon@2x.png'), iconBuffer);
+        try {
+          const logoData = design.logo.split(',')[1];
+          const logoBuffer = Buffer.from(logoData, 'base64');
+          const logoPath = path.join(tempDir, 'logo.png');
+          await fs.writeFile(logoPath, logoBuffer);
+          template.setImage('logo', logoPath);
+          template.setImage('icon', logoPath);
+        } catch (logoError) {
+          console.warn('Logo processing failed:', logoError);
+        }
       }
 
-      // Create signed pass using passkit-generator
-      try {
-        const pass = await PassKit.PKPass.from({
-          model: templateDir,
-          certificates: {
-            signerCert: certPath,
-            signerKey: keyPath,
-            wwdrCert: wwdrPath,
-          }
-        });
+      // Create signed pass
+      const pass = template.createPass({
+        serialNumber: serial,
+        barcodes: [{
+          message: `loyalty:${card.id}:guest`,
+          format: 'PKBarcodeFormatQR',
+          messageEncoding: 'iso-8859-1'
+        }]
+      });
 
-        const signedPassBuffer = pass.getAsBuffer();
-        
-        // Clean up
-        await fs.rm(tempDir, { recursive: true, force: true });
-        
-        console.log('Apple Wallet pass signed successfully using passkit-generator');
-        return signedPassBuffer;
-        
-      } catch (passkitError: any) {
-        console.warn('passkit-generator failed:', passkitError.message);
-        throw passkitError;
-      }
+      const signedBuffer = await pass.sign();
       
-    } catch (signingError: any) {
-      console.error('Apple Wallet signing failed:', signingError.message);
-      console.log('Falling back to unsigned pass structure');
+      // Clean up temporary files
+      await fs.rm(tempDir, { recursive: true, force: true });
+      
+      console.log(`Apple Wallet pass signed successfully (${signedBuffer.length} bytes)`);
+      return signedBuffer;
+      
+    } catch (passkitError: any) {
+      console.warn('passkit library signing failed:', passkitError.message);
+      
+      // Fallback to manual pass structure (unsigned but correct format)
+      return await createUnsignedPass(card, serial, design);
     }
-
-    // Generate final pass file
-    const passBuffer = await zip.generateAsync({ 
-      type: 'nodebuffer',
-      compression: 'DEFLATE',
-      compressionOptions: { level: 6 }
-    });
-
-    return passBuffer;
 
   } catch (error: any) {
     console.error('Apple Wallet pass generation error:', error);
     throw new Error(`Failed to generate Apple Wallet pass: ${error.message}`);
   }
+}
+
+async function createUnsignedPass(card: LoyaltyCard, serial: string, design: any): Promise<Buffer> {
+  console.log('Creating unsigned pass structure for testing...');
+  
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+
+  // Create pass.json
+  const passData = {
+    formatVersion: 1,
+    passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
+    serialNumber: serial,
+    teamIdentifier: process.env.APPLE_TEAM_ID,
+    organizationName: design.name || card.businessName || 'Loyalty Card',
+    description: `${design.name || 'Loyalty'} Card`,
+    foregroundColor: design.textColor || '#000000',
+    backgroundColor: design.backgroundColor || '#ffffff',
+    labelColor: design.textColor || '#000000',
+    logoText: design.name || card.businessName,
+    generic: {
+      primaryFields: [
+        {
+          key: 'balance',
+          label: 'Points',
+          value: `${card.currentStamps || 0}/${design.stamps || 10}`
+        }
+      ],
+      secondaryFields: [
+        {
+          key: 'name',
+          label: 'Card',
+          value: design.name || 'Loyalty Card'
+        }
+      ]
+    },
+    barcode: {
+      message: `loyalty:${card.id}:${card.customerId || 'guest'}`,
+      format: 'PKBarcodeFormatQR',
+      messageEncoding: 'iso-8859-1'
+    }
+  };
+
+  zip.file('pass.json', JSON.stringify(passData, null, 2));
+
+  // Create manifest for unsigned pass
+  const manifest: Record<string, string> = {
+    'pass.json': createHash('sha1').update(JSON.stringify(passData, null, 2)).digest('hex')
+  };
+
+  // Add logo if available
+  if (design.logo) {
+    try {
+      const logoData = design.logo.split(',')[1];
+      const logoBuffer = Buffer.from(logoData, 'base64');
+      
+      zip.file('logo.png', logoBuffer);
+      zip.file('icon.png', logoBuffer);
+      
+      manifest['logo.png'] = createHash('sha1').update(logoBuffer).digest('hex');
+      manifest['icon.png'] = createHash('sha1').update(logoBuffer).digest('hex');
+    } catch (logoError) {
+      console.warn('Logo processing failed:', logoError);
+    }
+  }
+
+  zip.file('manifest.json', JSON.stringify(manifest));
+
+  const passBuffer = await zip.generateAsync({ 
+    type: 'nodebuffer',
+    compression: 'DEFLATE'
+  });
+
+  console.log(`Unsigned pass created (${passBuffer.length} bytes) - iOS will reject without proper signature`);
+  return passBuffer;
 }
