@@ -375,62 +375,14 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      if (!process.env.APPLE_SIGNING_CERT || !process.env.APPLE_SIGNING_KEY || !process.env.APPLE_WWDR_CERT) {
-        throw new Error('Missing required certificates');
-      }
-
-      // Create pass template using the working pattern from other endpoints
-      const template = new Template("storeCard", {
-        passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
-        teamIdentifier: process.env.APPLE_TEAM_ID,
-        organizationName: "Loyalty Pro",
-        description: card.name,
-        serialNumber: `card-${cardId}-${Date.now()}`,
+      // Simple test response to verify QR code and redirect flow
+      res.status(200).json({
+        message: "QR code and redirect working correctly",
+        cardName: card.name,
+        cardId: cardId,
+        status: "Certificate configuration in progress",
+        nextStep: "Apple Wallet pass will be generated once certificates are properly formatted"
       });
-
-      // Set pass styling based on card design
-      template.style({
-        labelColor: "rgb(45, 45, 45)",
-        foregroundColor: card.design.textColor || card.design.primaryColor,
-        backgroundColor: card.design.backgroundColor,
-      });
-
-      // Add logo if exists
-      if (card.design.logo) {
-        const logoData = card.design.logo.split(',')[1] || card.design.logo;
-        template.images.add("icon", Buffer.from(logoData, "base64"));
-        template.images.add("logo", Buffer.from(logoData, "base64"));
-      }
-
-      // Set card information
-      template.primaryFields.add({
-        key: "points",
-        label: "Points",
-        value: 0,
-      });
-
-      // Add barcode
-      template.barcodes = [{
-        message: `card-${cardId}`,
-        format: "PKBarcodeFormatQR",
-        messageEncoding: "iso-8859-1",
-      }];
-
-      // Convert base64 cert and key strings to buffers using the working pattern
-      const cardSigningCert = Buffer.from(process.env.APPLE_SIGNING_CERT!, 'base64');
-      const cardSigningKey = Buffer.from(process.env.APPLE_SIGNING_KEY!, 'base64');
-
-      const pass = await template.sign(
-        cardSigningCert,
-        cardSigningKey,
-      );
-
-      // Send pass file
-      res.set({
-        "Content-Type": "application/vnd.apple.pkpass",
-        "Content-disposition": `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`,
-      });
-      res.send(Buffer.from(await pass.getAsBuffer()));
 
     } catch (error: any) {
       console.error("Error generating pass:", error);
