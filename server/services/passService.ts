@@ -1,7 +1,7 @@
 
 import type { LoyaltyCard } from '@db/schema';
-import PKPass from 'passkit-generator';
 import { formatPEM } from './certificateService';
+import { PKPass } from 'passkit-generator';
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
@@ -17,7 +17,7 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
     const signingKey = formatPEM(process.env.APPLE_SIGNING_KEY, 'PRIVATE KEY');
     const wwdrCert = formatPEM(process.env.APPLE_WWDR_CERT, 'CERTIFICATE');
 
-    // Create pass template
+    // Create pass template with proper structure
     const pass = new PKPass(
       {
         'pass.json': {
@@ -26,7 +26,7 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
           teamIdentifier: process.env.APPLE_TEAM_ID,
           organizationName: "Loyalty Pro",
           description: card.name,
-          serialNumber: serialNumber || `card-${card.id}`,
+          serialNumber: serialNumber || `card-${card.id}-${Date.now()}`,
           storeCard: {
             primaryFields: [
               {
@@ -44,7 +44,7 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
             ]
           },
           backgroundColor: card.design.backgroundColor,
-          foregroundColor: card.design.primaryColor,
+          foregroundColor: card.design.textColor || card.design.primaryColor,
           barcodes: [
             {
               message: serialNumber || `card-${card.id}`,
@@ -61,12 +61,26 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       }
     );
 
-    // Add logo if exists
+    // Add logo if exists (resize for Apple requirements)
     if (card.design.logo) {
-      const logoData = card.design.logo.split(',')[1];
-      const logoBuffer = Buffer.from(logoData, 'base64');
-      pass.images.add('icon', logoBuffer);
-      pass.images.add('logo', logoBuffer);
+      try {
+        const logoData = card.design.logo.includes(',') 
+          ? card.design.logo.split(',')[1] 
+          : card.design.logo;
+        const logoBuffer = Buffer.from(logoData, 'base64');
+        
+        // Use sharp to resize logo to Apple's requirements
+        const sharp = (await import('sharp')).default;
+        const resizedLogo = await sharp(logoBuffer)
+          .resize(160, 160, { fit: 'inside', withoutEnlargement: true })
+          .png()
+          .toBuffer();
+        
+        pass.images.add('icon', resizedLogo);
+        pass.images.add('logo', resizedLogo);
+      } catch (logoError) {
+        console.warn('Failed to add logo to pass:', logoError);
+      }
     }
 
     // Generate and return the signed pass buffer

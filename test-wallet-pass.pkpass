@@ -1,1 +1,1 @@
-{"message":"Failed to generate pass","error":"Pass generation failed: template.sign is not a function"}
+{"message":"Failed to generate pass","error":"Failed to generate Apple Wallet pass: require is not defined"}
