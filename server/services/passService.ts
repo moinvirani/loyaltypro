@@ -68,7 +68,7 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
     zip.file('pass.json', passJson);
 
     // Create manifest.json (required for Apple Wallet)
-    const manifest = {
+    const manifest: Record<string, string> = {
       'pass.json': createHash('sha1').update(passJson).digest('hex')
     };
 
@@ -103,6 +103,10 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
     }
 
     zip.file('manifest.json', JSON.stringify(manifest));
+
+    // For production Apple Wallet passes, proper certificate signing is required
+    // The unsigned pass structure is complete and will work once proper signing is implemented
+    console.log('Apple Wallet pass structure created with manifest and content files');
 
     // Generate the pass as a buffer
     const passBuffer = await zip.generateAsync({ 
