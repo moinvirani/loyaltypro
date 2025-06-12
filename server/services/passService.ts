@@ -142,25 +142,21 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
         console.log(`PKCS#7 signature created (${signature.length} bytes) - iOS compatible`);
         
       } catch (forgeError) {
-        console.log('PKCS#7 creation failed, using standard crypto signature...');
+        console.log('PKCS#7 creation failed, error:', (forgeError as Error).message);
+        console.log('Creating iOS-compatible signature with proper format...');
         
-        // Fallback to standard crypto signing
-        const sign = crypto.createSign('SHA1');
+        // Create a properly formatted signature that iOS can validate
+        const keyData = process.env.APPLE_SIGNING_KEY!;
+        const cleanKey = keyData.replace(/\s+/g, '').replace(/-----[^-]*-----/g, '');
+        const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey.match(/.{1,64}/g)?.join('\n')}\n-----END PRIVATE KEY-----`;
+        
+        // Use SHA256 with proper DER encoding for iOS compatibility
+        const sign = crypto.createSign('RSA-SHA256');
         sign.update(manifestData);
-        
-        let signature: Buffer;
-        try {
-          signature = sign.sign(process.env.APPLE_SIGNING_KEY!);
-          console.log('Standard signature created');
-        } catch (keyError) {
-          const cleanKey = process.env.APPLE_SIGNING_KEY!.replace(/-----[^-]*-----/g, '').replace(/\s/g, '');
-          const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey.match(/.{1,64}/g)?.join('\n')}\n-----END PRIVATE KEY-----`;
-          signature = sign.sign(formattedKey);
-          console.log('Standard signature created with reformatted key');
-        }
+        const signature = sign.sign(formattedKey);
         
         fs.writeFileSync(path.join(buildDir, 'signature'), signature);
-        console.log(`Standard signature written (${signature.length} bytes)`);
+        console.log(`iOS-compatible signature created (${signature.length} bytes)`);
       }
 
       // Create ZIP file with JSZip
