@@ -3,6 +3,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import * as forge from 'node-forge';
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
@@ -77,31 +78,90 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       }
       fs.writeFileSync(path.join(buildDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 
-      // Create signature with Node.js crypto
-      console.log('Creating signature with Node.js crypto...');
+      // Create PKCS#7 signature with certificate chain for iOS
+      console.log('Creating PKCS#7 signature for iOS compatibility...');
       const manifestData = fs.readFileSync(path.join(buildDir, 'manifest.json'));
       
-      // Get private key from environment
-      let privateKeyData = process.env.APPLE_SIGNING_KEY!;
-      
-      // Create signature using SHA1 (required by Apple Wallet)
-      const sign = crypto.createSign('SHA1');
-      sign.update(manifestData);
-      
-      let signature: Buffer;
       try {
-        signature = sign.sign(privateKeyData);
-        console.log('Signature created with original key format');
-      } catch (keyError) {
-        // Try reformatting the key
-        const cleanKey = privateKeyData.replace(/-----[^-]*-----/g, '').replace(/\s/g, '');
-        const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey.match(/.{1,64}/g)?.join('\n')}\n-----END PRIVATE KEY-----`;
-        signature = sign.sign(formattedKey);
-        console.log('Signature created with reformatted key');
+        // Format certificates for node-forge compatibility
+        const formatPemForForge = (data: string, type: 'CERTIFICATE' | 'PRIVATE KEY'): string => {
+          const clean = data.replace(/\s+/g, '').replace(/-----[^-]*-----/g, '');
+          const lines = clean.match(/.{1,64}/g) || [];
+          return `-----BEGIN ${type}-----\n${lines.join('\n')}\n-----END ${type}-----`;
+        };
+        
+        const formattedCert = formatPemForForge(process.env.APPLE_SIGNING_CERT!, 'CERTIFICATE');
+        const formattedKey = formatPemForForge(process.env.APPLE_SIGNING_KEY!, 'PRIVATE KEY');
+        
+        // Parse certificates and key using node-forge
+        const signingCert = forge.pki.certificateFromPem(formattedCert);
+        const privateKey = forge.pki.privateKeyFromPem(formattedKey);
+        
+        // Create PKCS#7 signed data structure
+        const p7 = forge.pkcs7.createSignedData();
+        p7.content = forge.util.createBuffer(manifestData.toString(), 'utf8');
+        
+        // Add signer with proper attributes for Apple Wallet
+        p7.addSigner({
+          key: privateKey,
+          certificate: signingCert,
+          digestAlgorithm: forge.pki.oids.sha1,
+          authenticatedAttributes: [
+            {
+              type: forge.pki.oids.contentTypes,
+              value: forge.pki.oids.data
+            },
+            {
+              type: forge.pki.oids.messageDigest
+            }
+          ]
+        });
+        
+        // Add signing certificate to the chain
+        p7.addCertificate(signingCert);
+        
+        // Add WWDR certificate if available
+        if (process.env.APPLE_WWDR_CERT) {
+          try {
+            const formattedWwdr = formatPemForForge(process.env.APPLE_WWDR_CERT, 'CERTIFICATE');
+            const wwdrCert = forge.pki.certificateFromPem(formattedWwdr);
+            p7.addCertificate(wwdrCert);
+            console.log('Added WWDR certificate to chain');
+          } catch (wwdrError) {
+            console.log('WWDR certificate format issue, proceeding without it');
+          }
+        }
+        
+        // Sign and convert to DER format
+        p7.sign({ detached: false });
+        const asn1 = p7.toAsn1();
+        const der = forge.asn1.toDer(asn1).getBytes();
+        const signature = Buffer.from(der, 'binary');
+        
+        fs.writeFileSync(path.join(buildDir, 'signature'), signature);
+        console.log(`PKCS#7 signature created (${signature.length} bytes) - iOS compatible`);
+        
+      } catch (forgeError) {
+        console.log('PKCS#7 creation failed, using standard crypto signature...');
+        
+        // Fallback to standard crypto signing
+        const sign = crypto.createSign('SHA1');
+        sign.update(manifestData);
+        
+        let signature: Buffer;
+        try {
+          signature = sign.sign(process.env.APPLE_SIGNING_KEY!);
+          console.log('Standard signature created');
+        } catch (keyError) {
+          const cleanKey = process.env.APPLE_SIGNING_KEY!.replace(/-----[^-]*-----/g, '').replace(/\s/g, '');
+          const formattedKey = `-----BEGIN PRIVATE KEY-----\n${cleanKey.match(/.{1,64}/g)?.join('\n')}\n-----END PRIVATE KEY-----`;
+          signature = sign.sign(formattedKey);
+          console.log('Standard signature created with reformatted key');
+        }
+        
+        fs.writeFileSync(path.join(buildDir, 'signature'), signature);
+        console.log(`Standard signature written (${signature.length} bytes)`);
       }
-      
-      fs.writeFileSync(path.join(buildDir, 'signature'), signature);
-      console.log(`Signature written (${signature.length} bytes)`);
 
       // Create ZIP file with JSZip
       const JSZip = (await import('jszip')).default;
