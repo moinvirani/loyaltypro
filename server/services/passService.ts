@@ -82,9 +82,23 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       }
       fs.writeFileSync(path.join(buildDir, "manifest.json"), JSON.stringify(manifest, null, 2));
 
-      // OpenSSL sign
-      execSync(`openssl smime -binary -sign -signer ${cert} -inkey ${key} -certfile ${wwdr} -in manifest.json -out signature -outform DER -nodetach -noattr`, 
-               { cwd: buildDir });
+      // OpenSSL sign with error handling
+      try {
+        execSync(`openssl smime -binary -sign -signer ${cert} -inkey ${key} -certfile ${wwdr} -in manifest.json -out signature -outform DER -nodetach -noattr`, 
+                 { cwd: buildDir, stdio: 'pipe' });
+      } catch (opensslError: any) {
+        console.error('OpenSSL signing failed:', opensslError.message);
+        
+        // Try alternative signing without WWDR cert first
+        try {
+          console.log('Retrying OpenSSL without separate WWDR cert...');
+          execSync(`openssl smime -binary -sign -signer ${cert} -inkey ${key} -in manifest.json -out signature -outform DER -nodetach -noattr`, 
+                   { cwd: buildDir, stdio: 'pipe' });
+        } catch (fallbackError: any) {
+          console.error('OpenSSL fallback also failed:', fallbackError.message);
+          throw new Error(`OpenSSL signing failed: ${opensslError.message}`);
+        }
+      }
 
       // Zip everything -> Buffer
       const zipName = `/tmp/${serial}.pkpass`;
