@@ -3,7 +3,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
-import * as forge from 'node-forge';
+import forge from 'node-forge';
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
@@ -113,11 +113,16 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
           digestAlgorithm: forge.pki.oids.sha1,
           authenticatedAttributes: [
             {
-              type: forge.pki.oids.contentTypes,
+              type: forge.pki.oids.contentType,
               value: forge.pki.oids.data
             },
             {
               type: forge.pki.oids.messageDigest
+              // value is automatically computed by node-forge during signing
+            },
+            {
+              type: forge.pki.oids.signingTime,
+              value: new Date()
             }
           ]
         });
