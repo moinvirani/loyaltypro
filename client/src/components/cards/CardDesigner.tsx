@@ -3,10 +3,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import { CardPreview } from "./CardPreview";
 import { WalletPreview } from "./WalletPreview";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Wallet, CreditCard, Palette } from "lucide-react";
+import { ArrowLeft, Save, Wallet, CreditCard, Palette, Check, Sparkles } from "lucide-react";
 import {
   Tabs,
   TabsContent,
@@ -21,7 +22,116 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import type { LoyaltyCard } from "@db/schema";
+
+const TEMPLATES = [
+  {
+    id: "coffee",
+    name: "Coffee Shop",
+    design: {
+      primaryColor: "#4A2C2A",
+      backgroundColor: "#D4A574",
+      gradientEnabled: true,
+      gradientColor: "#8B5E3C",
+      textColor: "#FFFFFF",
+      cardStyle: "modern",
+      stamps: 8,
+    }
+  },
+  {
+    id: "gym",
+    name: "Fitness Center",
+    design: {
+      primaryColor: "#FF6B35",
+      backgroundColor: "#1A1A2E",
+      gradientEnabled: true,
+      gradientColor: "#16213E",
+      textColor: "#FFFFFF",
+      cardStyle: "modern",
+      stamps: 10,
+    }
+  },
+  {
+    id: "spa",
+    name: "Beauty & Spa",
+    design: {
+      primaryColor: "#E8B4BC",
+      backgroundColor: "#FAF0F3",
+      gradientEnabled: true,
+      gradientColor: "#F5E6E8",
+      textColor: "#4A3540",
+      cardStyle: "elegant",
+      stamps: 5,
+    }
+  },
+  {
+    id: "restaurant",
+    name: "Restaurant",
+    design: {
+      primaryColor: "#C41E3A",
+      backgroundColor: "#1C1C1C",
+      gradientEnabled: true,
+      gradientColor: "#2D2D2D",
+      textColor: "#FFFFFF",
+      cardStyle: "classic",
+      stamps: 6,
+    }
+  },
+  {
+    id: "retail",
+    name: "Retail Store",
+    design: {
+      primaryColor: "#2563EB",
+      backgroundColor: "#FFFFFF",
+      gradientEnabled: false,
+      gradientColor: "#EFF6FF",
+      textColor: "#1E3A8A",
+      cardStyle: "minimalist",
+      stamps: 10,
+    }
+  },
+  {
+    id: "pet",
+    name: "Pet Care",
+    design: {
+      primaryColor: "#10B981",
+      backgroundColor: "#ECFDF5",
+      gradientEnabled: true,
+      gradientColor: "#D1FAE5",
+      textColor: "#065F46",
+      cardStyle: "modern",
+      stamps: 8,
+    }
+  },
+  {
+    id: "sports",
+    name: "Sports Club",
+    design: {
+      primaryColor: "#0EA5E9",
+      backgroundColor: "#0C4A6E",
+      gradientEnabled: true,
+      gradientColor: "#082F49",
+      textColor: "#FFFFFF",
+      cardStyle: "modern",
+      stamps: 10,
+    }
+  },
+  {
+    id: "bakery",
+    name: "Bakery",
+    design: {
+      primaryColor: "#F59E0B",
+      backgroundColor: "#FFFBEB",
+      gradientEnabled: true,
+      gradientColor: "#FEF3C7",
+      textColor: "#78350F",
+      cardStyle: "classic",
+      stamps: 6,
+    }
+  },
+];
 
 interface CardDesignerProps {
   initialCard?: LoyaltyCard;
@@ -32,6 +142,7 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: initialCard?.name || "",
@@ -46,6 +157,25 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       cardStyle: initialCard?.design?.cardStyle || "modern",
     }
   });
+
+  const applyTemplate = (templateId: string) => {
+    const template = TEMPLATES.find(t => t.id === templateId);
+    if (template) {
+      setSelectedTemplate(templateId);
+      setFormData(prev => ({
+        ...prev,
+        design: {
+          ...prev.design,
+          ...template.design,
+          logo: prev.design.logo,
+        }
+      }));
+      toast({
+        title: "Template Applied",
+        description: `${template.name} template has been applied`,
+      });
+    }
+  };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -185,13 +315,55 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
           </h2>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {!initialCard && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <Label className="text-base font-semibold">Quick Start Templates</Label>
+              </div>
+              <ScrollArea className="w-full whitespace-nowrap">
+                <div className="flex gap-3 pb-4">
+                  {TEMPLATES.map((template) => (
+                    <Card 
+                      key={template.id}
+                      className={`cursor-pointer transition-all hover:scale-105 flex-shrink-0 w-28 ${
+                        selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
+                      }`}
+                      onClick={() => applyTemplate(template.id)}
+                    >
+                      <CardContent className="p-3">
+                        <div 
+                          className="h-12 rounded-md mb-2 relative"
+                          style={{
+                            background: template.design.gradientEnabled 
+                              ? `linear-gradient(135deg, ${template.design.backgroundColor}, ${template.design.gradientColor})`
+                              : template.design.backgroundColor
+                          }}
+                        >
+                          {selectedTemplate === template.id && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-md">
+                              <Check className="h-5 w-5 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs font-medium text-center truncate">{template.name}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="name">Card Name</Label>
             <Input
               id="name"
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., ISF Members Card"
               required
             />
           </div>
