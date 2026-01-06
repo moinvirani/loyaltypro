@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { QrCode, Plus, Minus, User, Award, History, Check, AlertCircle } from "lucide-react";
+import { QrCode, Plus, Minus, User, Award, History, Check, AlertCircle, Download, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface ScanResult {
@@ -20,6 +20,7 @@ interface ScanResult {
   rewardMessage?: string;
   maxStamps?: number;
   rewardThreshold?: number;
+  passUpdateUrl?: string;
 }
 
 interface LookupResult {
@@ -286,6 +287,41 @@ export default function StaffPage() {
                   <p className="font-medium text-green-700 dark:text-green-300">
                     {lastScan.rewardMessage}
                   </p>
+                </div>
+              )}
+
+              {lastScan.passUpdateUrl && (
+                <div className="border-t pt-4 space-y-2">
+                  <p className="text-sm text-muted-foreground text-center">
+                    Customer can update their wallet pass:
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        const fullUrl = `${window.location.origin}${lastScan.passUpdateUrl}`;
+                        navigator.clipboard.writeText(fullUrl);
+                        toast({
+                          title: "Link Copied",
+                          description: "Share this link with the customer to update their wallet pass",
+                        });
+                      }}
+                    >
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Copy Link
+                    </Button>
+                    <Button
+                      variant="default"
+                      className="flex-1"
+                      onClick={() => {
+                        window.open(lastScan.passUpdateUrl, '_blank');
+                      }}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Pass
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>

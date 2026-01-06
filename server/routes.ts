@@ -762,6 +762,9 @@ export function registerRoutes(app: Express): Server {
         description: description || `Added ${amount} ${loyaltyType === 'stamps' ? 'stamp(s)' : 'point(s)'}`,
       });
 
+      // Generate pass update URL for customer
+      const passUpdateUrl = `/api/pass/update/${customerId}/${cardId}`;
+
       res.json({
         success: true,
         customer: customer ? { id: customer.id, name: customer.name } : null,
@@ -773,6 +776,7 @@ export function registerRoutes(app: Express): Server {
         rewardMessage,
         maxStamps: loyaltyType === 'stamps' ? maxStamps : undefined,
         rewardThreshold: loyaltyType === 'points' ? rewardThreshold : undefined,
+        passUpdateUrl,
       });
 
     } catch (error: any) {
@@ -855,6 +859,64 @@ export function registerRoutes(app: Express): Server {
     } catch (error: any) {
       console.error("Error looking up pass:", error);
       res.status(500).json({ message: "Failed to lookup pass", error: error.message });
+    }
+  });
+
+  // Regenerate customer pass with updated balance
+  app.get("/api/pass/update/:customerId/:cardId", async (req, res) => {
+    try {
+      const { customerId, cardId } = req.params;
+      
+      // Find customer pass
+      const customerPass = await db.query.customerPasses.findFirst({
+        where: and(
+          eq(customerPasses.customerId, parseInt(customerId)),
+          eq(customerPasses.cardId, parseInt(cardId))
+        ),
+      });
+
+      if (!customerPass) {
+        return res.status(404).json({ message: "Customer pass not found" });
+      }
+
+      // Get customer, card, and business data
+      const customer = await db.query.customers.findFirst({
+        where: eq(customers.id, parseInt(customerId)),
+      });
+
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.id, parseInt(cardId)),
+      });
+
+      if (!card) {
+        return res.status(404).json({ message: "Loyalty card not found" });
+      }
+
+      const business = await db.query.businesses.findFirst({
+        where: eq(businesses.id, card.businessId),
+      });
+
+      if (!business) {
+        return res.status(404).json({ message: "Business not found" });
+      }
+
+      // Generate updated pass with current balance
+      // Use the existing serialNumber from the customer pass
+      const passBuffer = await generateEnhancedPass({
+        card,
+        business,
+        customer: customer || undefined,
+        currentBalance: customerPass.currentBalance || 0,
+        serialNumber: customerPass.serialNumber,
+      });
+
+      res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
+      res.setHeader('Content-Disposition', `attachment; filename="${card.name.replace(/\s+/g, '_')}_updated.pkpass"`);
+      res.send(passBuffer);
+
+    } catch (error: any) {
+      console.error("Error regenerating pass:", error);
+      res.status(500).json({ message: "Failed to regenerate pass", error: error.message });
     }
   });
 
