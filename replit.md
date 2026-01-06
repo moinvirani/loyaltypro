@@ -10,12 +10,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (January 2026)
 
+- **Authentication System**: Complete business login/signup with password hashing (scrypt), passport-local strategy, session management
+- **Onboarding Wizard**: 3-step wizard for new businesses (business info, create first card, success) with protected route
+- **Staff Scanner**: Mobile-friendly scanner page at /staff for adding stamps/points, with pass update functionality
+- **Wallet Pass Updates**: Customers can download updated passes with current balance via Copy Link or Download buttons
+- **Responsive Design**: Mobile hamburger menu, Sheet-based navigation, responsive padding across all breakpoints
 - **Stripe Integration**: Set up subscription billing with 3 pricing tiers (Starter 29 AED, Growth 79 AED, Enterprise 199 AED)
 - **Landing Page**: Created marketing page with hero, features, pricing toggle (monthly/yearly), testimonials
 - **Dashboard Enhancement**: Added analytics charts (area, pie, bar), stat cards with trends, quick actions sidebar
-- **Card Designer Templates**: Added 8 pre-built templates (Coffee Shop, Fitness, Spa, Restaurant, Retail, Pet Care, Sports Club, Bakery)
-- **Sports Club Template**: Updated to use green colors (#22C55E primary) for ISF testing
-- **Billing Portal**: Opens in new tab to preserve SPA flow
+- **Card Designer Templates**: Added 8 pre-built templates with loyalty type selection (stamps vs points)
 
 ## System Architecture
 
@@ -32,10 +35,13 @@ Preferred communication style: Simple, everyday language.
 
 **Key Routes:**
 - `/` - Landing page (no sidebar/layout)
-- `/dashboard` - Main dashboard with analytics
-- `/cards` - Card designer and management
-- `/customers` - Customer management
-- `/branches` - Branch location management
+- `/auth` - Login/register page
+- `/onboarding` - New business onboarding wizard (protected)
+- `/dashboard` - Main dashboard with analytics (protected)
+- `/cards` - Card designer and management (protected)
+- `/customers` - Customer management (protected)
+- `/branches` - Branch location management (protected)
+- `/staff` - Staff scanner for adding stamps/points (public for tablet use)
 
 **Card Designer Features:**
 - 8 pre-built templates with visual previews
@@ -128,8 +134,27 @@ Preferred communication style: Simple, everyday language.
 - Growth: 79 AED/month - 5 cards, 1000 customers
 - Enterprise: 199 AED/month - Unlimited cards/customers
 
+### Authentication System
+
+**Backend (server/auth.ts):**
+- Password hashing with scrypt and random salts
+- Session management with MemoryStore (secure cookies in production)
+- passport-local strategy adapted for businesses table
+- Endpoints: /api/register, /api/login, /api/logout, /api/user, PATCH /api/business/profile
+
+**Frontend:**
+- AuthProvider context with user state and mutations
+- ProtectedRoute component for authenticated-only pages
+- Automatic redirect to /auth for unauthenticated users
+- Logout button in dashboard sidebar
+
+**Security:**
+- SESSION_SECRET environment variable required for production
+- Secure cookies enabled for production, sameSite protection
+- Error responses properly handled to prevent caching failed auth attempts
+
 ### Known Issues
 
 - Apple Wallet pass generation works but requires matching certificate pairs
-- No authentication system implemented yet (uses hardcoded businessId: 1)
+- Some API routes still use hardcoded businessId: 1 (TODO: update to use req.user.id)
 - Google Wallet integration pending (needs service account setup)
