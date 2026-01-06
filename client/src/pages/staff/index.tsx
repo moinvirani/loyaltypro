@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,8 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { QrCode, Plus, Minus, User, Award, History, Check, AlertCircle, Download, Share2 } from "lucide-react";
+import { Camera, QrCode, Plus, Minus, User, Award, History, Check, AlertCircle, Download, Share2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Html5Qrcode } from "html5-qrcode";
 
 interface ScanResult {
   success: boolean;
@@ -61,10 +62,73 @@ export default function StaffPage() {
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
   const [customerInfo, setCustomerInfo] = useState<LookupResult | null>(null);
   const [mode, setMode] = useState<'scan' | 'lookup'>('scan');
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerContainerId = "qr-reader";
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current?.isScanning) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
+  }, []);
+
+  const startCamera = async () => {
+    setCameraError(null);
+    
+    try {
+      if (scannerRef.current?.isScanning) {
+        await scannerRef.current.stop();
+      }
+
+      const scanner = new Html5Qrcode(scannerContainerId);
+      scannerRef.current = scanner;
+
+      await scanner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+        },
+        (decodedText) => {
+          setQrInput(decodedText);
+          stopCamera();
+          toast({
+            title: "QR Code Scanned",
+            description: "Code captured successfully",
+          });
+        },
+        () => {}
+      );
+
+      setCameraActive(true);
+    } catch (error: any) {
+      console.error("Camera error:", error);
+      setCameraError(error.message || "Unable to access camera");
+      setCameraActive(false);
+    }
+  };
+
+  const stopCamera = async () => {
+    try {
+      if (scannerRef.current?.isScanning) {
+        await scannerRef.current.stop();
+      }
+    } catch (error) {
+      console.error("Error stopping camera:", error);
+    }
+    setCameraActive(false);
+  };
 
   const scanMutation = useMutation({
     mutationFn: async (data: { qrData: string; amount: number }) => {
       const response = await apiRequest('POST', '/api/staff/scan', data);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "Failed to process scan");
+      }
       return response.json();
     },
     onSuccess: (data: ScanResult) => {
@@ -95,6 +159,10 @@ export default function StaffPage() {
   const lookupMutation = useMutation({
     mutationFn: async (qrData: string) => {
       const response = await apiRequest('POST', '/api/staff/lookup', { qrData });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "Failed to lookup customer");
+      }
       return response.json();
     },
     onSuccess: (data: LookupResult) => {
@@ -113,7 +181,7 @@ export default function StaffPage() {
     if (!qrInput.trim()) {
       toast({
         title: "Error",
-        description: "Please enter or scan a QR code",
+        description: "Please scan a QR code first",
         variant: "destructive",
       });
       return;
@@ -125,7 +193,7 @@ export default function StaffPage() {
     if (!qrInput.trim()) {
       toast({
         title: "Error",
-        description: "Please enter or scan a QR code",
+        description: "Please scan a QR code first",
         variant: "destructive",
       });
       return;
@@ -161,18 +229,64 @@ export default function StaffPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <QrCode className="h-5 w-5" />
+              <Camera className="h-5 w-5" />
               {mode === 'scan' ? 'Scan Customer Pass' : 'Customer Lookup'}
             </CardTitle>
             <CardDescription>
               {mode === 'scan' 
-                ? 'Scan or enter the QR code from the customer\'s wallet pass'
+                ? 'Use the camera to scan the QR code from the customer\'s wallet pass'
                 : 'Look up customer information by scanning their pass'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div 
+              id={scannerContainerId} 
+              className={`w-full aspect-square max-w-sm mx-auto bg-muted rounded-lg overflow-hidden ${cameraActive ? '' : 'hidden'}`}
+            />
+
+            {cameraError && (
+              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-center">
+                <AlertCircle className="h-6 w-6 text-destructive mx-auto mb-2" />
+                <p className="text-sm text-destructive">{cameraError}</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Make sure you've granted camera permissions to this site
+                </p>
+              </div>
+            )}
+
+            {!cameraActive && !cameraError && (
+              <div className="bg-muted rounded-lg p-8 text-center">
+                <Camera className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <Button onClick={startCamera} size="lg">
+                  <Camera className="h-4 w-4 mr-2" />
+                  Start Camera Scanner
+                </Button>
+              </div>
+            )}
+
+            {cameraActive && (
+              <Button 
+                variant="outline" 
+                onClick={stopCamera}
+                className="w-full"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Stop Camera
+              </Button>
+            )}
+
+            {qrInput && (
+              <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Check className="h-5 w-5 text-green-600" />
+                  <span className="font-medium text-green-700 dark:text-green-300">QR Code Captured</span>
+                </div>
+                <p className="text-xs font-mono text-muted-foreground truncate">{qrInput}</p>
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="qrInput">QR Code Data</Label>
+              <Label htmlFor="qrInput">Or paste QR code manually</Label>
               <Input
                 id="qrInput"
                 value={qrInput}
@@ -180,9 +294,6 @@ export default function StaffPage() {
                 placeholder="Paste QR code content here"
                 className="font-mono text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                Use a QR code scanner app to scan the customer's pass, then paste the result here
-              </p>
             </div>
 
             {mode === 'scan' && (
@@ -218,7 +329,7 @@ export default function StaffPage() {
 
             <Button 
               onClick={mode === 'scan' ? handleScan : handleLookup}
-              disabled={scanMutation.isPending || lookupMutation.isPending}
+              disabled={scanMutation.isPending || lookupMutation.isPending || !qrInput}
               className="w-full"
               size="lg"
             >

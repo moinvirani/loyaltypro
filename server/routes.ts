@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { db } from "@db";
 import { businesses, branches, customers, loyaltyCards, notifications, customerPasses, transactions } from "@db/schema";
@@ -12,14 +12,25 @@ import { stripeService } from "./stripeService";
 import { getStripePublishableKey, getUncachableStripeClient } from "./stripeClient";
 import { setupAuth } from "./auth";
 
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.isAuthenticated() || !req.user) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  next();
+}
+
+function getBusinessId(req: Request): number {
+  return (req.user as any)?.id;
+}
+
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
   
   setupAuth(app);
 
   // Dashboard stats
-  app.get("/api/dashboard/stats", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/dashboard/stats", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
 
     const [customerCount] = await db
       .select({ count: count() })
@@ -50,8 +61,8 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Advanced Analytics
-  app.get("/api/analytics/customer-growth", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/analytics/customer-growth", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const customerGrowth = await db
       .select({
         date: sql<string>`DATE_TRUNC('day', ${customers.createdAt})::text`,
@@ -65,8 +76,8 @@ export function registerRoutes(app: Express): Server {
     res.json(customerGrowth);
   });
 
-  app.get("/api/analytics/points-distribution", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/analytics/points-distribution", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const ranges = [
       { min: 0, max: 100 },
       { min: 101, max: 500 },
@@ -96,8 +107,8 @@ export function registerRoutes(app: Express): Server {
     res.json(distribution);
   });
 
-  app.get("/api/analytics/notification-engagement", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/analytics/notification-engagement", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const engagement = await db
       .select({
         status: notifications.status,
@@ -111,8 +122,8 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Customer Engagement Metrics
-  app.get("/api/analytics/customer-segments", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/analytics/customer-segments", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const segments = [
       { name: "New", days: 30 },
       { name: "Active", days: 90 },
@@ -143,8 +154,8 @@ export function registerRoutes(app: Express): Server {
     res.json(segmentData);
   });
 
-  app.get("/api/analytics/points-trends", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/analytics/points-trends", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const trends = await db
       .select({
         date: sql<string>`DATE_TRUNC('month', ${customers.createdAt})::text`,
@@ -159,8 +170,8 @@ export function registerRoutes(app: Express): Server {
     res.json(trends);
   });
 
-  app.get("/api/analytics/customer-retention", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/analytics/customer-retention", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const months = 6;
 
     const cohorts = await db
@@ -181,8 +192,8 @@ export function registerRoutes(app: Express): Server {
 
 
   // Branches endpoints
-  app.get("/api/branches", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/branches", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const branchList = await db.query.branches.findMany({
       where: eq(branches.businessId, businessId),
       orderBy: [branches.createdAt],
@@ -190,8 +201,8 @@ export function registerRoutes(app: Express): Server {
     res.json(branchList);
   });
 
-  app.post("/api/branches", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.post("/api/branches", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const { name, address } = req.body;
 
     // Check branch limit
@@ -212,8 +223,8 @@ export function registerRoutes(app: Express): Server {
     res.json(newBranch[0]);
   });
 
-  app.put("/api/branches/:id", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.put("/api/branches/:id", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const branchId = parseInt(req.params.id);
     const { name, address } = req.body;
 
@@ -233,8 +244,8 @@ export function registerRoutes(app: Express): Server {
     res.json(updatedBranch[0]);
   });
 
-  app.delete("/api/branches/:id", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.delete("/api/branches/:id", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const branchId = parseInt(req.params.id);
 
     const deletedBranch = await db
@@ -253,8 +264,8 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Cards endpoints
-  app.get("/api/cards", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/cards", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const cards = await db.query.loyaltyCards.findMany({
       where: eq(loyaltyCards.businessId, businessId),
       orderBy: [desc(loyaltyCards.createdAt)],
@@ -262,9 +273,9 @@ export function registerRoutes(app: Express): Server {
     res.json(cards);
   });
 
-  app.post("/api/cards", async (req, res) => {
+  app.post("/api/cards", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
       const { name, design } = req.body;
 
       if (!name || !design) {
@@ -298,9 +309,9 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.put("/api/cards/:id", async (req, res) => {
+  app.put("/api/cards/:id", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
       const cardId = parseInt(req.params.id);
       const { name, design } = req.body;
 
@@ -341,9 +352,9 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.delete("/api/cards/:id", async (req, res) => {
+  app.delete("/api/cards/:id", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
       const cardId = parseInt(req.params.id);
 
       const deletedCard = await db
@@ -366,9 +377,9 @@ export function registerRoutes(app: Express): Server {
   });
 
   // GET endpoint for QR code wallet pass download (generic pass for card preview)
-  app.get("/api/cards/:id/wallet-pass", async (req, res) => {
+  app.get("/api/cards/:id/wallet-pass", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
       const cardId = parseInt(req.params.id);
 
       const card = await db.query.loyaltyCards.findFirst({
@@ -413,9 +424,9 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Generate wallet pass for existing card (POST for manual downloads)
-  app.post("/api/cards/:id/wallet-pass", async (req, res) => {
+  app.post("/api/cards/:id/wallet-pass", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
       const cardId = parseInt(req.params.id);
 
       const card = await db.query.loyaltyCards.findFirst({
@@ -500,8 +511,8 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Customers endpoints
-  app.get("/api/customers", async (req, res) => {
-    const businessId = 1; // TODO: Get from auth
+  app.get("/api/customers", requireAuth, async (req, res) => {
+    const businessId = getBusinessId(req);
     const customerList = await db.query.customers.findMany({
       where: eq(customers.businessId, businessId),
     });
@@ -651,9 +662,9 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Staff scan endpoint - add stamps/points when customer visits
-  app.post("/api/staff/scan", async (req, res) => {
+  app.post("/api/staff/scan", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
       const { qrData, amount = 1, description } = req.body;
 
       // Parse QR code data
@@ -896,7 +907,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const business = await db.query.businesses.findFirst({
-        where: eq(businesses.id, card.businessId),
+        where: eq(businesses.id, card.businessId!),
       });
 
       if (!business) {
@@ -1061,9 +1072,9 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/stripe/checkout", async (req, res) => {
+  app.post("/api/stripe/checkout", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
       const { priceId } = req.body;
 
       const business = await db.query.businesses.findFirst({
@@ -1101,9 +1112,9 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/stripe/portal", async (req, res) => {
+  app.post("/api/stripe/portal", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
 
       const business = await db.query.businesses.findFirst({
         where: eq(businesses.id, businessId),
@@ -1128,9 +1139,9 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.get("/api/stripe/subscription", async (req, res) => {
+  app.get("/api/stripe/subscription", requireAuth, async (req, res) => {
     try {
-      const businessId = 1; // TODO: Get from auth
+      const businessId = getBusinessId(req);
 
       const business = await db.query.businesses.findFirst({
         where: eq(businesses.id, businessId),
