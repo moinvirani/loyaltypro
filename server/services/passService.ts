@@ -4,6 +4,50 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import forge from 'node-forge';
+import sharp from 'sharp';
+
+async function generateIconPng(backgroundColor: string, size: number): Promise<Buffer> {
+  const hexColor = backgroundColor.startsWith('#') ? backgroundColor : `#${backgroundColor}`;
+  
+  const svg = `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+    <rect width="${size}" height="${size}" fill="${hexColor}" rx="${Math.round(size * 0.2)}"/>
+    <text x="50%" y="55%" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.4)}" 
+          fill="white" text-anchor="middle" dominant-baseline="middle" font-weight="bold">L</text>
+  </svg>`;
+  
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function generateStripPng(backgroundColor: string, textColor: string, cardName: string, width: number, height: number): Promise<Buffer> {
+  const bgHex = backgroundColor.startsWith('#') ? backgroundColor : `#${backgroundColor}`;
+  const textHex = textColor.startsWith('#') ? textColor : `#${textColor}`;
+  
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:${bgHex};stop-opacity:1" />
+        <stop offset="100%" style="stop-color:${adjustColor(bgHex, -30)};stop-opacity:1" />
+      </linearGradient>
+    </defs>
+    <rect width="${width}" height="${height}" fill="url(#grad)"/>
+    <text x="50%" y="50%" font-family="Arial, sans-serif" font-size="${Math.round(height * 0.25)}" 
+          fill="${textHex}" text-anchor="middle" dominant-baseline="middle" font-weight="bold">${escapeXml(cardName)}</text>
+  </svg>`;
+  
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+function adjustColor(hex: string, amount: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+  const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+  const b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+function escapeXml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
   try {
@@ -70,6 +114,30 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       // Write pass.json to build directory
       const passJsonContent = JSON.stringify(passData, null, 2);
       fs.writeFileSync(path.join(buildDir, 'pass.json'), passJsonContent);
+      
+      // Generate required icon assets for Apple Wallet
+      console.log('Generating icon assets...');
+      const bgColor = design.backgroundColor || design.primaryColor || '#4F46E5';
+      const icon = await generateIconPng(bgColor, 29);
+      const icon2x = await generateIconPng(bgColor, 58);
+      const icon3x = await generateIconPng(bgColor, 87);
+      const logo = await generateIconPng(bgColor, 160);
+      const logo2x = await generateIconPng(bgColor, 320);
+      
+      // Generate strip images (required for generic/loyalty passes)
+      const strip = await generateStripPng(bgColor, design.textColor || '#ffffff', design.name || 'Loyalty Card', 375, 123);
+      const strip2x = await generateStripPng(bgColor, design.textColor || '#ffffff', design.name || 'Loyalty Card', 750, 246);
+      const strip3x = await generateStripPng(bgColor, design.textColor || '#ffffff', design.name || 'Loyalty Card', 1125, 369);
+      
+      fs.writeFileSync(path.join(buildDir, 'icon.png'), icon);
+      fs.writeFileSync(path.join(buildDir, 'icon@2x.png'), icon2x);
+      fs.writeFileSync(path.join(buildDir, 'icon@3x.png'), icon3x);
+      fs.writeFileSync(path.join(buildDir, 'logo.png'), logo);
+      fs.writeFileSync(path.join(buildDir, 'logo@2x.png'), logo2x);
+      fs.writeFileSync(path.join(buildDir, 'strip.png'), strip);
+      fs.writeFileSync(path.join(buildDir, 'strip@2x.png'), strip2x);
+      fs.writeFileSync(path.join(buildDir, 'strip@3x.png'), strip3x);
+      console.log('Icon and strip assets generated successfully');
       
       // Compute SHA1 hashes for every file -> manifest.json
       const manifest: Record<string, string> = {};
@@ -142,8 +210,8 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
           }
         }
         
-        // Sign and convert to DER format
-        p7.sign({ detached: false });
+        // Sign and convert to DER format (detached signature as Apple requires)
+        p7.sign({ detached: true });
         const asn1 = p7.toAsn1();
         const der = forge.asn1.toDer(asn1).getBytes();
         const signature = Buffer.from(der, 'binary');
