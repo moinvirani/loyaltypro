@@ -23,6 +23,9 @@ export const businesses = pgTable("businesses", {
   email: text("email").unique().notNull(),
   password: text("password").notNull(),
   logo: text("logo"),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  subscriptionStatus: text("subscription_status"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -8,6 +8,8 @@ import { generateAppleWalletPass } from "./services/passService";
 import { diagnosePassCertificates, formatPEM } from "./services/certificateService";
 import { execSync } from "child_process";
 import writeCerts from "./helpers/writeCerts";
+import { stripeService } from "./stripeService";
+import { getStripePublishableKey, getUncachableStripeClient } from "./stripeClient";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -590,6 +592,137 @@ export function registerRoutes(app: Express): Server {
       
       res.json(results);
       
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Stripe routes
+  app.get("/api/stripe/publishable-key", async (req, res) => {
+    try {
+      const publishableKey = await getStripePublishableKey();
+      res.json({ publishableKey });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/stripe/products", async (req, res) => {
+    try {
+      const products = await stripeService.listProductsWithPrices();
+      
+      const productsMap = new Map();
+      for (const row of products) {
+        const r = row as any;
+        if (!productsMap.has(r.product_id)) {
+          productsMap.set(r.product_id, {
+            id: r.product_id,
+            name: r.product_name,
+            description: r.product_description,
+            active: r.product_active,
+            metadata: r.product_metadata,
+            prices: []
+          });
+        }
+        if (r.price_id) {
+          productsMap.get(r.product_id).prices.push({
+            id: r.price_id,
+            unit_amount: r.unit_amount,
+            currency: r.currency,
+            recurring: r.recurring,
+            active: r.price_active,
+            metadata: r.price_metadata,
+          });
+        }
+      }
+
+      res.json({ data: Array.from(productsMap.values()) });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/stripe/checkout", async (req, res) => {
+    try {
+      const businessId = 1; // TODO: Get from auth
+      const { priceId } = req.body;
+
+      const business = await db.query.businesses.findFirst({
+        where: eq(businesses.id, businessId),
+      });
+
+      if (!business) {
+        return res.status(404).json({ error: "Business not found" });
+      }
+
+      let customerId = business.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripeService.createCustomer(business.email, businessId, business.name);
+        await db.update(businesses)
+          .set({ stripeCustomerId: customer.id })
+          .where(eq(businesses.id, businessId));
+        customerId = customer.id;
+      }
+
+      const host = req.get('host') || 'localhost:5000';
+      const protocol = req.protocol || 'https';
+      const baseUrl = `${protocol}://${host}`;
+
+      const session = await stripeService.createCheckoutSession(
+        customerId,
+        priceId,
+        `${baseUrl}/dashboard?checkout=success`,
+        `${baseUrl}/pricing?checkout=cancelled`
+      );
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error('Checkout error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/stripe/portal", async (req, res) => {
+    try {
+      const businessId = 1; // TODO: Get from auth
+
+      const business = await db.query.businesses.findFirst({
+        where: eq(businesses.id, businessId),
+      });
+
+      if (!business?.stripeCustomerId) {
+        return res.status(400).json({ error: "No subscription found" });
+      }
+
+      const host = req.get('host') || 'localhost:5000';
+      const protocol = req.protocol || 'https';
+      
+      const session = await stripeService.createCustomerPortalSession(
+        business.stripeCustomerId,
+        `${protocol}://${host}/dashboard`
+      );
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error('Portal error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/stripe/subscription", async (req, res) => {
+    try {
+      const businessId = 1; // TODO: Get from auth
+
+      const business = await db.query.businesses.findFirst({
+        where: eq(businesses.id, businessId),
+      });
+
+      if (!business?.stripeSubscriptionId) {
+        return res.json({ subscription: null });
+      }
+
+      const subscription = await stripeService.getSubscription(business.stripeSubscriptionId);
+      res.json({ subscription });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

@@ -10,13 +10,11 @@ interface SidebarItemProps {
 }
 
 const SidebarItem = ({ icon, label, href, active }: SidebarItemProps) => (
-  <Link href={href}>
-    <a className={`flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors ${
-      active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-    }`}>
-      {icon}
-      <span>{label}</span>
-    </a>
+  <Link href={href} className={`flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors ${
+    active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+  }`}>
+    {icon}
+    <span>{label}</span>
   </Link>
 );
 
@@ -35,8 +33,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <SidebarItem
             icon={<BarChart className="h-5 w-5" />}
             label="Dashboard"
-            href="/"
-            active={location === '/'}
+            href="/dashboard"
+            active={location === '/dashboard'}
           />
           <SidebarItem
             icon={<CreditCard className="h-5 w-5" />}
