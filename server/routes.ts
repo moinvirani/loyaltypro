@@ -1075,7 +1075,7 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/stripe/checkout", requireAuth, async (req, res) => {
     try {
       const businessId = getBusinessId(req);
-      const { priceId } = req.body;
+      const { priceId, withTrial } = req.body;
 
       const business = await db.query.businesses.findFirst({
         where: eq(businesses.id, businessId),
@@ -1098,11 +1098,15 @@ export function registerRoutes(app: Express): Server {
       const protocol = req.protocol || 'https';
       const baseUrl = `${protocol}://${host}`;
 
+      const TRIAL_DAYS = 14;
+      const trialDays = withTrial ? TRIAL_DAYS : undefined;
+
       const session = await stripeService.createCheckoutSession(
         customerId,
         priceId,
         `${baseUrl}/dashboard?checkout=success`,
-        `${baseUrl}/pricing?checkout=cancelled`
+        `${baseUrl}/pricing?checkout=cancelled`,
+        trialDays
       );
 
       res.json({ url: session.url });

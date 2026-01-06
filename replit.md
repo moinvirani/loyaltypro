@@ -10,9 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (January 2026)
 
+- **Multi-Tenancy Fix**: Updated ALL 22 API routes to use authenticated business ID instead of hardcoded businessId: 1
+- **Built-in QR Scanner**: Integrated html5-qrcode camera scanning in staff page, eliminating need for external scanner apps
+- **Onboarding Wizard**: 4-step wizard (business info, plan selection with 14-day trial, first card, complete)
+- **Free Trial**: Server-enforced 14-day trial period (TRIAL_DAYS constant), client passes withTrial boolean only
 - **Authentication System**: Complete business login/signup with password hashing (scrypt), passport-local strategy, session management
-- **Onboarding Wizard**: 3-step wizard for new businesses (business info, create first card, success) with protected route
-- **Staff Scanner**: Mobile-friendly scanner page at /staff for adding stamps/points, with pass update functionality
+- **Staff Scanner**: Mobile-friendly scanner page at /staff with built-in camera QR scanning and manual input fallback
 - **Wallet Pass Updates**: Customers can download updated passes with current balance via Copy Link or Download buttons
 - **Responsive Design**: Mobile hamburger menu, Sheet-based navigation, responsive padding across all breakpoints
 - **Stripe Integration**: Set up subscription billing with 3 pricing tiers (Starter 29 AED, Growth 79 AED, Enterprise 199 AED)
@@ -156,5 +159,4 @@ Preferred communication style: Simple, everyday language.
 ### Known Issues
 
 - Apple Wallet pass generation works but requires matching certificate pairs
-- Some API routes still use hardcoded businessId: 1 (TODO: update to use req.user.id)
 - Google Wallet integration pending (needs service account setup)
