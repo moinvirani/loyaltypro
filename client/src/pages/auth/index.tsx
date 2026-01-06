@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -14,10 +14,15 @@ export default function AuthPage() {
   
   const [loginData, setLoginData] = useState({ email: "", password: "" });
   const [registerData, setRegisterData] = useState({ name: "", email: "", password: "" });
+  const isNewRegistration = useRef(false);
 
   useEffect(() => {
     if (user) {
-      setLocation("/dashboard");
+      if (isNewRegistration.current) {
+        setLocation("/onboarding");
+      } else {
+        setLocation("/dashboard");
+      }
     }
   }, [user, setLocation]);
 
@@ -27,16 +32,14 @@ export default function AuthPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    isNewRegistration.current = false;
     loginMutation.mutate(loginData);
   };
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
-    registerMutation.mutate(registerData, {
-      onSuccess: () => {
-        setLocation("/onboarding");
-      }
-    });
+    isNewRegistration.current = true;
+    registerMutation.mutate(registerData);
   };
 
   return (
