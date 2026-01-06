@@ -13,6 +13,7 @@ import CustomerMetrics from "@/pages/customers/metrics";
 import Branches from "@/pages/branches";
 import StaffPage from "@/pages/staff";
 import AuthPage from "@/pages/auth";
+import OnboardingPage from "@/pages/onboarding";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
@@ -58,6 +59,7 @@ function AppRoutes() {
       <Route path="/" component={Landing} />
       <Route path="/pricing" component={Landing} />
       <Route path="/auth" component={AuthPage} />
+      <ProtectedRoute path="/onboarding" component={OnboardingPage} />
       <Route path="/staff" component={StaffPage} />
       <ProtectedRoute path="/dashboard" component={ProtectedDashboard} />
       <ProtectedRoute path="/cards" component={ProtectedDashboard} />

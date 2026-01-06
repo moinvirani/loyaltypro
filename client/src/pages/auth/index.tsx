@@ -27,7 +27,11 @@ export default function AuthPage() {
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
-    registerMutation.mutate(registerData);
+    registerMutation.mutate(registerData, {
+      onSuccess: () => {
+        setLocation("/onboarding");
+      }
+    });
   };
 
   return (

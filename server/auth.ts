@@ -165,4 +165,40 @@ export function setupAuth(app: Express) {
     const { password: _, ...safeData } = req.user;
     res.json(safeData);
   });
+
+  app.patch("/api/business/profile", async (req, res) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.sendStatus(401);
+    }
+    
+    try {
+      const { phone, address, website, logo } = req.body;
+      const updateData: Record<string, any> = {};
+      
+      if (phone !== undefined) updateData.phone = phone;
+      if (address !== undefined) updateData.address = address;
+      if (website !== undefined) updateData.website = website;
+      if (logo !== undefined) updateData.logo = logo;
+      
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: "No fields to update" });
+      }
+      
+      const [updated] = await db
+        .update(businesses)
+        .set(updateData)
+        .where(eq(businesses.id, req.user.id))
+        .returning();
+      
+      if (!updated) {
+        return res.status(404).json({ message: "Business not found" });
+      }
+      
+      const { password: _, ...safeData } = updated;
+      res.json(safeData);
+    } catch (error: any) {
+      console.error("Profile update error:", error);
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
 }
