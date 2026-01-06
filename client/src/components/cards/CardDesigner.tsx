@@ -109,10 +109,10 @@ const TEMPLATES = [
     id: "sports",
     name: "Sports Club",
     design: {
-      primaryColor: "#0EA5E9",
-      backgroundColor: "#0C4A6E",
+      primaryColor: "#22C55E",
+      backgroundColor: "#14532D",
       gradientEnabled: true,
-      gradientColor: "#082F49",
+      gradientColor: "#052E16",
       textColor: "#FFFFFF",
       cardStyle: "modern",
       stamps: 10,
