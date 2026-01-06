@@ -10,9 +10,12 @@ import { execSync } from "child_process";
 import writeCerts from "./helpers/writeCerts";
 import { stripeService } from "./stripeService";
 import { getStripePublishableKey, getUncachableStripeClient } from "./stripeClient";
+import { setupAuth } from "./auth";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
+  
+  setupAuth(app);
 
   // Dashboard stats
   app.get("/api/dashboard/stats", async (req, res) => {

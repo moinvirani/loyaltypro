@@ -2,6 +2,8 @@ import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { ProtectedRoute } from "@/lib/protected-route";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
@@ -10,7 +12,9 @@ import Customers from "@/pages/customers";
 import CustomerMetrics from "@/pages/customers/metrics";
 import Branches from "@/pages/branches";
 import StaffPage from "@/pages/staff";
+import AuthPage from "@/pages/auth";
 import NotFound from "@/pages/not-found";
+import { Loader2 } from "lucide-react";
 
 function DashboardRouter() {
   return (
@@ -25,23 +29,53 @@ function DashboardRouter() {
   );
 }
 
-function App() {
+function ProtectedDashboard() {
+  return (
+    <DashboardLayout>
+      <DashboardRouter />
+    </DashboardLayout>
+  );
+}
+
+function AppRoutes() {
   const [location] = useLocation();
+  const { user, isLoading } = useAuth();
+  
   const isLandingPage = location === "/" || location === "/pricing";
+  const isAuthPage = location === "/auth";
   const isStaffPage = location === "/staff" || location.startsWith("/staff/");
   
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-border" />
+      </div>
+    );
+  }
+
+  return (
+    <Switch>
+      <Route path="/" component={Landing} />
+      <Route path="/pricing" component={Landing} />
+      <Route path="/auth" component={AuthPage} />
+      <Route path="/staff" component={StaffPage} />
+      <ProtectedRoute path="/dashboard" component={ProtectedDashboard} />
+      <ProtectedRoute path="/cards" component={ProtectedDashboard} />
+      <ProtectedRoute path="/customers" component={ProtectedDashboard} />
+      <ProtectedRoute path="/customers/metrics" component={ProtectedDashboard} />
+      <ProtectedRoute path="/branches" component={ProtectedDashboard} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      {isLandingPage ? (
-        <Landing />
-      ) : isStaffPage ? (
-        <StaffPage />
-      ) : (
-        <DashboardLayout>
-          <DashboardRouter />
-        </DashboardLayout>
-      )}
-      <Toaster />
+      <AuthProvider>
+        <AppRoutes />
+        <Toaster />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
