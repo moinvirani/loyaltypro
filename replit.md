@@ -1,12 +1,21 @@
-# Loyalty Card Management System
+# LoyaltyPro - Loyalty Card Management Platform
 
 ## Overview
 
-A full-stack loyalty card management platform that enables businesses to create, manage, and distribute digital loyalty cards. The system features a React frontend for card design and customer management, with Express/Node.js backend handling Apple Wallet pass generation and database operations.
+LoyaltyPro is a SaaS loyalty card management platform for the UAE market that enables businesses to create, manage, and distribute digital loyalty cards with Apple Wallet integration. The platform targets the UAE market with competitive pricing against brand-wallet.com, starting with ISF sports business for daily testing.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+
+## Recent Changes (January 2026)
+
+- **Stripe Integration**: Set up subscription billing with 3 pricing tiers (Starter 29 AED, Growth 79 AED, Enterprise 199 AED)
+- **Landing Page**: Created marketing page with hero, features, pricing toggle (monthly/yearly), testimonials
+- **Dashboard Enhancement**: Added analytics charts (area, pie, bar), stat cards with trends, quick actions sidebar
+- **Card Designer Templates**: Added 8 pre-built templates (Coffee Shop, Fitness, Spa, Restaurant, Retail, Pet Care, Sports Club, Bakery)
+- **Sports Club Template**: Updated to use green colors (#22C55E primary) for ISF testing
+- **Billing Portal**: Opens in new tab to preserve SPA flow
 
 ## System Architecture
 
@@ -19,52 +28,51 @@ Preferred communication style: Simple, everyday language.
 - TanStack Query (React Query) for server state management and data fetching
 - Radix UI components with Tailwind CSS for consistent, accessible UI
 - shadcn/ui component library for pre-built UI patterns
+- Recharts for analytics visualizations
 
-**Design System:**
-- Tailwind CSS utility-first styling with custom theme configuration
-- Theme JSON plugin for dynamic color scheme management
-- Professional variant with customizable primary colors and radius
-- Support for light/dark mode through CSS variables
+**Key Routes:**
+- `/` - Landing page (no sidebar/layout)
+- `/dashboard` - Main dashboard with analytics
+- `/cards` - Card designer and management
+- `/customers` - Customer management
+- `/branches` - Branch location management
 
-**State Management:**
-- React Query for async server state with optimistic updates disabled
-- Local component state for form inputs and UI interactions
-- No global state management library (intentional architectural decision)
-
-**Key Features:**
-- Dashboard with business metrics and analytics
-- Card designer with live preview (both physical card and Apple Wallet views)
-- Customer management with metrics tracking
-- Branch location management
-- Real-time form validation using react-hook-form with Zod schemas
+**Card Designer Features:**
+- 8 pre-built templates with visual previews
+- Live preview with Card and Wallet tabs
+- Color customization (primary, background, gradient)
+- Logo upload with 5MB limit
+- Stamp count configuration (1-15)
+- Apple Wallet pass generation
 
 ### Backend Architecture
 
 **Technology Stack:**
 - Express.js server with TypeScript
 - Drizzle ORM for type-safe database operations
-- PostgreSQL database (configured via Drizzle, though DB may not be provisioned yet)
-- Node.js crypto and node-forge for Apple Wallet cryptographic signing
+- PostgreSQL database
+- Stripe integration for subscription billing
+- node-forge for Apple Wallet cryptographic signing
+
+**Stripe Integration Pattern:**
+- NEVER create tables in stripe schema (managed by stripe-replit-sync)
+- NEVER use SQL INSERT for products/prices (use Stripe API)
+- Query from stripe.products/prices tables
+- Store Stripe IDs in application tables (businesses.stripeCustomerId, businesses.stripeSubscriptionId)
+- Initialization order: runMigrations() → getStripeSync() → findOrCreateManagedWebhook() → syncBackfill()
 
 **API Design:**
 - RESTful endpoints under `/api` prefix
+- Stripe webhook route registered BEFORE express.json()
 - Request/response logging middleware for API routes only
 - JSON body parsing with 10MB limit for image uploads
-- Error handling middleware with status code propagation
 
 **Apple Wallet Integration:**
 - PKCS#7 detached signature generation for .pkpass files
 - Certificate chain validation with Apple WWDR certificates
 - SHA-1 manifest hashing for pass integrity
-- ZIP packaging with proper MIME types (`application/vnd.apple.pkpass`)
-- QR code generation for pass distribution
+- ZIP packaging with proper MIME types
 - Pass structure compliant with Apple Wallet specifications
-
-**Image Processing:**
-- Sharp library for image optimization and resizing
-- Base64 encoding/decoding for logo uploads
-- Image validation with 5MB size limits
-- Automatic format conversion to PNG
 
 ### Data Architecture
 
@@ -72,13 +80,9 @@ Preferred communication style: Simple, everyday language.
 
 **Businesses Table:**
 - Core business entity with authentication credentials
+- Stripe customer and subscription IDs
 - Logo storage as base64 or URL
 - Email-based unique identification
-
-**Branches Table:**
-- Multiple location support per business
-- Address and naming information
-- Foreign key relationship to businesses
 
 **Loyalty Cards Table:**
 - Card design stored as JSONB with Zod validation
@@ -89,43 +93,43 @@ Preferred communication style: Simple, everyday language.
 **Customers Table:**
 - Customer profiles linked to businesses
 - Email-based identification
-- Tracks customer engagement
+- Points and stamps tracking
 
-**Design Schema (Zod-validated JSONB):**
-- Primary and background colors
-- Optional logo image
-- Configurable stamp count
-- Gradient support with secondary colors
-- Text color customization
-- Card style variants (modern, classic, minimalist, elegant)
+**Branches Table:**
+- Multiple location support per business
+- Address and naming information
 
 ### External Dependencies
+
+**Stripe (Configured):**
+- Products and prices managed via Stripe API
+- Webhooks for subscription events
+- Customer portal for billing management
 
 **Apple Developer Requirements:**
 - Pass Type ID certificate (APPLE_SIGNING_CERT)
 - Private key for certificate (APPLE_SIGNING_KEY)
 - Apple Worldwide Developer Relations certificate (APPLE_WWDR_CERT)
-- Team Identifier for pass generation
-- Note: Current certificates have validation issues due to key/certificate mismatch
+- Team Identifier (APPLE_TEAM_ID)
+- Pass Type ID (APPLE_PASS_TYPE_ID)
 
-**Third-Party Services:**
-- QRCode.react for QR code SVG generation in browser
-- qrcode library for server-side QR generation (visible in test files)
-- Sharp for server-side image processing
-- node-forge for PKCS#7 cryptographic operations
+**Google Wallet (Pending):**
+- Requires Google Cloud Console setup
+- Service account credentials needed
+- Not yet implemented
 
-**Database:**
-- PostgreSQL via DATABASE_URL environment variable
-- WebSocket support (ws library) for Drizzle with Neon serverless
-- Migration system via drizzle-kit
+### Business Context
 
-**Development Tools:**
-- Replit-specific plugins for theme management and error overlay
-- TypeScript with strict mode enabled
-- ESM module system throughout
+**Target Market:** UAE
+**Competitive Advantage:** Better pricing than brand-wallet.com
+**Testing Partner:** ISF Sports Business (daily validation)
+**Pricing Tiers:**
+- Starter: 29 AED/month - 1 card, 100 customers
+- Growth: 79 AED/month - 5 cards, 1000 customers
+- Enterprise: 199 AED/month - Unlimited cards/customers
 
-**Known Issues:**
-- Apple Wallet pass generation is complete but requires matching certificate pairs
-- iOS signature validation fails due to certificate/key mismatch in environment variables
-- Database may not be provisioned (throws error if DATABASE_URL missing)
-- No authentication system implemented (uses hardcoded businessId: 1)
+### Known Issues
+
+- Apple Wallet pass generation works but requires matching certificate pairs
+- No authentication system implemented yet (uses hardcoded businessId: 1)
+- Google Wallet integration pending (needs service account setup)
