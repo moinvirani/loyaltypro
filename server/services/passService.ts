@@ -1,10 +1,18 @@
-import type { LoyaltyCard } from '@db/schema';
+import type { LoyaltyCard, Business, Customer } from '@db/schema';
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import forge from 'node-forge';
 import sharp from 'sharp';
+
+export interface PassGenerationOptions {
+  card: LoyaltyCard;
+  business: Business;
+  customer?: Customer;
+  currentBalance?: number;
+  serialNumber?: string;
+}
 
 async function generateIconPng(backgroundColor: string, size: number): Promise<Buffer> {
   const hexColor = backgroundColor.startsWith('#') ? backgroundColor : `#${backgroundColor}`;
@@ -50,6 +58,32 @@ function escapeXml(text: string): string {
 }
 
 export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: string): Promise<Buffer> {
+  // Legacy function - redirects to enhanced version with minimal info
+  const mockBusiness: Business = {
+    id: 1,
+    name: card.name || 'Loyalty Business',
+    email: '',
+    password: '',
+    logo: null,
+    phone: null,
+    address: null,
+    website: null,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    subscriptionStatus: null,
+    createdAt: new Date(),
+  };
+  
+  return generateEnhancedPass({
+    card,
+    business: mockBusiness,
+    serialNumber,
+  });
+}
+
+export async function generateEnhancedPass(options: PassGenerationOptions): Promise<Buffer> {
+  const { card, business, customer, currentBalance = 0, serialNumber } = options;
+  
   try {
     // Validate required environment variables
     if (!process.env.APPLE_PASS_TYPE_ID || !process.env.APPLE_TEAM_ID || 
@@ -57,59 +91,151 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
       throw new Error('Missing required Apple Wallet configuration');
     }
 
-    console.log('Creating Apple Wallet pass with Node.js crypto signing...');
+    console.log('Creating enhanced Apple Wallet pass...');
     
     const design = card.design as any;
-    const serial = serialNumber || `card-${card.id}-${Date.now()}`;
+    const loyaltyType = design.loyaltyType || 'stamps';
+    const maxStamps = design.maxStamps || design.stamps || 10;
+    const serial = serialNumber || `pass-${card.id}-${customer?.id || 'generic'}-${Date.now()}`;
     
     // Create temporary build directory
     const buildDir = `/tmp/pass_${Date.now()}`;
     fs.mkdirSync(buildDir, { recursive: true });
     
     try {
+      // Build primary fields based on loyalty type
+      const primaryFields = [];
+      if (loyaltyType === 'stamps') {
+        primaryFields.push({
+          key: 'stamps',
+          label: 'STAMPS',
+          value: `${currentBalance}/${maxStamps}`
+        });
+      } else {
+        primaryFields.push({
+          key: 'points',
+          label: 'POINTS',
+          value: currentBalance.toString()
+        });
+      }
+      
+      // Build secondary fields with customer and business info
+      const secondaryFields = [];
+      if (customer?.name) {
+        secondaryFields.push({
+          key: 'member',
+          label: 'MEMBER',
+          value: customer.name
+        });
+      }
+      secondaryFields.push({
+        key: 'business',
+        label: 'BUSINESS',
+        value: business.name
+      });
+      
+      // Build auxiliary fields
+      const auxiliaryFields = [];
+      if (loyaltyType === 'points' && design.rewardThreshold) {
+        const pointsToReward = Math.max(0, design.rewardThreshold - currentBalance);
+        auxiliaryFields.push({
+          key: 'nextReward',
+          label: 'NEXT REWARD',
+          value: pointsToReward > 0 ? `${pointsToReward} points away` : 'Reward available!'
+        });
+      }
+      if (customer?.totalVisits) {
+        auxiliaryFields.push({
+          key: 'visits',
+          label: 'VISITS',
+          value: customer.totalVisits.toString()
+        });
+      }
+      
+      // Build back fields with contact info and terms
+      const backFields = [];
+      if (business.phone) {
+        backFields.push({
+          key: 'phone',
+          label: 'Contact Phone',
+          value: business.phone
+        });
+      }
+      if (business.address) {
+        backFields.push({
+          key: 'address',
+          label: 'Address',
+          value: business.address
+        });
+      }
+      if (business.website) {
+        backFields.push({
+          key: 'website',
+          label: 'Website',
+          value: business.website
+        });
+      }
+      if (design.rewardDescription) {
+        backFields.push({
+          key: 'reward',
+          label: 'Reward',
+          value: design.rewardDescription
+        });
+      }
+      backFields.push({
+        key: 'terms',
+        label: 'Terms and Conditions',
+        value: `Present this pass at ${business.name} to earn and redeem ${loyaltyType === 'stamps' ? 'stamps' : 'loyalty points'}. Valid at participating locations.`
+      });
+      backFields.push({
+        key: 'cardId',
+        label: 'Card ID',
+        value: `#${card.id}`
+      });
+      if (customer?.id) {
+        backFields.push({
+          key: 'memberId',
+          label: 'Member ID',
+          value: `#${customer.id}`
+        });
+      }
+      
       // Create pass data that exactly matches Apple's specifications
-      const passData = {
+      const passData: any = {
         formatVersion: 1,
         passTypeIdentifier: process.env.APPLE_PASS_TYPE_ID,
         serialNumber: serial,
         teamIdentifier: process.env.APPLE_TEAM_ID,
-        organizationName: design.name || 'Loyalty Business',
-        description: `${design.name || 'Loyalty'} Card`,
-        foregroundColor: design.textColor || '#000000',
-        backgroundColor: design.backgroundColor || '#ffffff',
-        labelColor: design.textColor || '#000000',
-        logoText: design.name,
+        organizationName: business.name,
+        description: `${card.name} - ${business.name}`,
+        foregroundColor: design.textColor || '#ffffff',
+        backgroundColor: design.backgroundColor || '#000000',
+        labelColor: design.textColor || '#ffffff',
+        logoText: business.name,
         generic: {
-          primaryFields: [
-            {
-              key: 'balance',
-              label: 'Points',
-              value: `${design.stamps || 0}/${design.stamps || 10}`
-            }
-          ],
-          secondaryFields: [
-            {
-              key: 'name',
-              label: 'Card Name',
-              value: design.name || 'Loyalty Card'
-            }
-          ],
-          backFields: [
-            {
-              key: 'terms',
-              label: 'Terms and Conditions',
-              value: 'Present this pass to earn and redeem loyalty points. Valid at participating locations.'
-            }
-          ]
+          primaryFields,
+          secondaryFields,
+          auxiliaryFields: auxiliaryFields.length > 0 ? auxiliaryFields : undefined,
+          backFields
         },
         barcodes: [
           {
-            message: `CUSTOMER-${card.id}`,
+            message: JSON.stringify({
+              type: 'loyalty',
+              cardId: card.id,
+              customerId: customer?.id || null,
+              serial
+            }),
             format: 'PKBarcodeFormatQR',
             messageEncoding: 'iso-8859-1'
           }
         ]
       };
+      
+      // Remove undefined fields
+      if (!passData.generic.auxiliaryFields) {
+        delete passData.generic.auxiliaryFields;
+      }
 
       // Write pass.json to build directory
       const passJsonContent = JSON.stringify(passData, null, 2);
@@ -190,7 +316,7 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
             },
             {
               type: forge.pki.oids.signingTime,
-              value: new Date()
+              value: new Date() as any
             }
           ]
         });
@@ -308,32 +434,36 @@ export async function generateAppleWalletPass(card: LoyaltyCard, serialNumber?: 
           try {
             console.log('Attempting OpenSSL fallback...');
             const { execSync } = require('child_process');
-            const fs = require('fs');
-            const path = require('path');
+            const fsSync = require('fs');
+            const pathSync = require('path');
             
             // Write key to temp file for OpenSSL
             const tempKeyPath = `/tmp/temp-key-${Date.now()}.pem`;
-            fs.writeFileSync(tempKeyPath, keyData);
+            fsSync.writeFileSync(tempKeyPath, keyData);
             
             // Create signature with OpenSSL
             const manifestPath = `/tmp/manifest-${Date.now()}.json`;
-            fs.writeFileSync(manifestPath, manifestData);
+            fsSync.writeFileSync(manifestPath, manifestData);
             
             const signaturePath = `/tmp/signature-${Date.now()}.bin`;
             execSync(`openssl dgst -sha1 -sign ${tempKeyPath} -out ${signaturePath} ${manifestPath}`);
             
-            signature = fs.readFileSync(signaturePath);
+            signature = fsSync.readFileSync(signaturePath) as Buffer;
             console.log(`OpenSSL signature created (${signature.length} bytes)`);
             
             // Cleanup
-            fs.unlinkSync(tempKeyPath);
-            fs.unlinkSync(manifestPath);
-            fs.unlinkSync(signaturePath);
+            fsSync.unlinkSync(tempKeyPath);
+            fsSync.unlinkSync(manifestPath);
+            fsSync.unlinkSync(signaturePath);
             
           } catch (opensslError) {
             console.log('OpenSSL fallback failed:', (opensslError as Error).message);
             throw new Error('All signing methods failed - certificate/key format incompatible');
           }
+        }
+        
+        if (!signature) {
+          throw new Error('Failed to create signature');
         }
         
         fs.writeFileSync(path.join(buildDir, 'signature'), signature);

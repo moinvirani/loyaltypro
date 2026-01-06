@@ -9,6 +9,7 @@ import CardDesigner from "@/pages/card-designer";
 import Customers from "@/pages/customers";
 import CustomerMetrics from "@/pages/customers/metrics";
 import Branches from "@/pages/branches";
+import StaffPage from "@/pages/staff";
 import NotFound from "@/pages/not-found";
 
 function DashboardRouter() {
@@ -27,11 +28,14 @@ function DashboardRouter() {
 function App() {
   const [location] = useLocation();
   const isLandingPage = location === "/" || location === "/pricing";
+  const isStaffPage = location === "/staff" || location.startsWith("/staff/");
   
   return (
     <QueryClientProvider client={queryClient}>
       {isLandingPage ? (
         <Landing />
+      ) : isStaffPage ? (
+        <StaffPage />
       ) : (
         <DashboardLayout>
           <DashboardRouter />

@@ -155,6 +155,11 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
       gradientColor: initialCard?.design?.gradientColor || "#f0f0f0",
       textColor: initialCard?.design?.textColor || "#ffffff",
       cardStyle: initialCard?.design?.cardStyle || "modern",
+      loyaltyType: (initialCard?.design as any)?.loyaltyType || "stamps",
+      maxStamps: (initialCard?.design as any)?.maxStamps || 10,
+      pointsPerCurrency: (initialCard?.design as any)?.pointsPerCurrency || 1,
+      rewardThreshold: (initialCard?.design as any)?.rewardThreshold || 100,
+      rewardDescription: (initialCard?.design as any)?.rewardDescription || "",
     }
   });
 
@@ -434,18 +439,115 @@ export default function CardDesigner({ initialCard, onClose }: CardDesignerProps
             </div>
           </div>
 
+          <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+            <Label className="text-base font-semibold">Loyalty Program Type</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                className={`p-4 rounded-lg border-2 transition-all text-left ${
+                  formData.design.loyaltyType === 'stamps' 
+                    ? 'border-primary bg-primary/10' 
+                    : 'border-muted-foreground/20 hover:border-primary/50'
+                }`}
+                onClick={() => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, loyaltyType: 'stamps' }
+                }))}
+              >
+                <div className="font-medium">Stamp Card</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Collect stamps, earn rewards (e.g., coffee shops)
+                </div>
+              </button>
+              <button
+                type="button"
+                className={`p-4 rounded-lg border-2 transition-all text-left ${
+                  formData.design.loyaltyType === 'points' 
+                    ? 'border-primary bg-primary/10' 
+                    : 'border-muted-foreground/20 hover:border-primary/50'
+                }`}
+                onClick={() => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, loyaltyType: 'points' }
+                }))}
+              >
+                <div className="font-medium">Points Card</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Earn points, redeem for discounts (e.g., retail, services)
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {formData.design.loyaltyType === 'stamps' ? (
+            <div className="space-y-2">
+              <Label htmlFor="maxStamps">Stamps to Earn Reward</Label>
+              <Input
+                id="maxStamps"
+                type="number"
+                min="1"
+                max="20"
+                value={formData.design.maxStamps}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  design: { ...prev.design, maxStamps: parseInt(e.target.value) || 10, stamps: parseInt(e.target.value) || 10 }
+                }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Number of stamps needed to earn a reward
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="pointsPerCurrency">Points per 1 AED spent</Label>
+                <Input
+                  id="pointsPerCurrency"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={formData.design.pointsPerCurrency}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    design: { ...prev.design, pointsPerCurrency: parseInt(e.target.value) || 1 }
+                  }))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  How many points customers earn per 1 AED spent
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rewardThreshold">Points for Reward</Label>
+                <Input
+                  id="rewardThreshold"
+                  type="number"
+                  min="10"
+                  max="10000"
+                  value={formData.design.rewardThreshold}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    design: { ...prev.design, rewardThreshold: parseInt(e.target.value) || 100 }
+                  }))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Points needed to earn a reward
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
-            <Label htmlFor="stamps">Number of Stamps</Label>
+            <Label htmlFor="rewardDescription">Reward Description</Label>
             <Input
-              id="stamps"
-              type="number"
-              min="1"
-              max="10"
-              value={formData.design.stamps}
+              id="rewardDescription"
+              value={formData.design.rewardDescription}
               onChange={(e) => setFormData(prev => ({
                 ...prev,
-                design: { ...prev.design, stamps: parseInt(e.target.value) || 5 }
+                design: { ...prev.design, rewardDescription: e.target.value }
               }))}
+              placeholder={formData.design.loyaltyType === 'stamps' 
+                ? "e.g., Free coffee after 10 stamps" 
+                : "e.g., 10 AED off when you reach 100 points"}
             />
           </div>
 

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Layout, CreditCard, Users, Building2, BarChart } from "lucide-react";
+import { Layout, CreditCard, Users, Building2, BarChart, QrCode } from "lucide-react";
 
 interface SidebarItemProps {
   icon: ReactNode;
@@ -54,6 +54,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             href="/branches"
             active={location === '/branches'}
           />
+          
+          <div className="pt-4 mt-4 border-t">
+            <p className="px-4 pb-2 text-xs font-medium text-muted-foreground uppercase">Staff Tools</p>
+            <SidebarItem
+              icon={<QrCode className="h-5 w-5" />}
+              label="Scanner"
+              href="/staff"
+              active={location === '/staff'}
+            />
+          </div>
         </nav>
       </aside>
       

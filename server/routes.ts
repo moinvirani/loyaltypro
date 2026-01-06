@@ -1,10 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { db } from "@db";
-import { businesses, branches, customers, loyaltyCards, notifications } from "@db/schema";
+import { businesses, branches, customers, loyaltyCards, notifications, customerPasses, transactions } from "@db/schema";
 import { eq, count, sql, desc, and } from "drizzle-orm";
 import { processImage, validateImage } from "./services/imageService";
-import { generateAppleWalletPass } from "./services/passService";
+import { generateAppleWalletPass, generateEnhancedPass } from "./services/passService";
 import { diagnosePassCertificates, formatPEM } from "./services/certificateService";
 import { execSync } from "child_process";
 import writeCerts from "./helpers/writeCerts";
@@ -362,7 +362,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // GET endpoint for QR code wallet pass download
+  // GET endpoint for QR code wallet pass download (generic pass for card preview)
   app.get("/api/cards/:id/wallet-pass", async (req, res) => {
     try {
       const businessId = 1; // TODO: Get from auth
@@ -379,10 +379,23 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      // Generate the pass buffer using OpenSSL signing
-      const passBuffer = await generateAppleWalletPass(card, `card-${cardId}-${Date.now()}`);
+      // Fetch business info for enhanced pass
+      const business = await db.query.businesses.findFirst({
+        where: eq(businesses.id, businessId),
+      });
 
-      // Send pass file with proper content type
+      if (!business) {
+        return res.status(404).json({ message: "Business not found" });
+      }
+
+      // Generate enhanced pass with business info
+      const passBuffer = await generateEnhancedPass({
+        card,
+        business,
+        currentBalance: 0,
+        serialNumber: `card-${cardId}-preview-${Date.now()}`
+      });
+
       res.setHeader("Content-Type", "application/vnd.apple.pkpass");
       res.setHeader("Content-disposition", `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`);
       res.send(passBuffer);
@@ -413,8 +426,22 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      // Use the Node.js crypto service
-      const passBuffer = await generateAppleWalletPass(card, `card-${cardId}-${Date.now()}`);
+      // Fetch business info for enhanced pass
+      const business = await db.query.businesses.findFirst({
+        where: eq(businesses.id, businessId),
+      });
+
+      if (!business) {
+        return res.status(404).json({ message: "Business not found" });
+      }
+
+      // Generate enhanced pass with business info
+      const passBuffer = await generateEnhancedPass({
+        card,
+        business,
+        currentBalance: 0,
+        serialNumber: `card-${cardId}-${Date.now()}`
+      });
 
       res.setHeader("Content-Type", "application/vnd.apple.pkpass");
       res.setHeader("Content-disposition", `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`);
@@ -478,10 +505,11 @@ export function registerRoutes(app: Express): Server {
     res.json(customerList);
   });
 
-  // Customer wallet pass generation endpoint (using Node.js crypto)
+  // Customer wallet pass generation endpoint - creates personalized pass for customer
   app.get("/api/wallet-pass/:cardId/:customerId", async (req, res) => {
     try {
       const cardId = parseInt(req.params.cardId);
+      const customerId = parseInt(req.params.customerId);
       
       const card = await db.query.loyaltyCards.findFirst({
         where: eq(loyaltyCards.id, cardId),
@@ -491,8 +519,57 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Card not found" });
       }
 
-      // Use the Node.js crypto service
-      const passBuffer = await generateAppleWalletPass(card, `customer-${req.params.customerId}-${Date.now()}`);
+      const customer = await db.query.customers.findFirst({
+        where: eq(customers.id, customerId),
+      });
+
+      if (!customer) {
+        return res.status(404).json({ message: "Customer not found" });
+      }
+
+      const business = await db.query.businesses.findFirst({
+        where: eq(businesses.id, card.businessId || 1),
+      });
+
+      if (!business) {
+        return res.status(404).json({ message: "Business not found" });
+      }
+
+      // Check for existing pass or create new one
+      let customerPass = await db.query.customerPasses.findFirst({
+        where: and(
+          eq(customerPasses.customerId, customerId),
+          eq(customerPasses.cardId, cardId)
+        ),
+      });
+
+      const design = card.design as any;
+      const loyaltyType = design.loyaltyType || 'stamps';
+      let currentBalance = 0;
+
+      if (!customerPass) {
+        // Create new customer pass record
+        const serialNumber = `pass-${cardId}-${customerId}-${Date.now()}`;
+        const [newPass] = await db.insert(customerPasses).values({
+          customerId,
+          cardId,
+          serialNumber,
+          currentBalance: 0,
+          lifetimeBalance: 0,
+        }).returning();
+        customerPass = newPass;
+      } else {
+        currentBalance = customerPass.currentBalance || 0;
+      }
+
+      // Generate enhanced pass with customer info
+      const passBuffer = await generateEnhancedPass({
+        card,
+        business,
+        customer,
+        currentBalance,
+        serialNumber: customerPass.serialNumber
+      });
 
       res.setHeader("Content-Type", "application/vnd.apple.pkpass");
       res.setHeader("Content-disposition", `attachment; filename=${card.name.replace(/\s+/g, '_')}.pkpass`);
@@ -501,6 +578,283 @@ export function registerRoutes(app: Express): Server {
     } catch (error: any) {
       console.error("Error generating pass:", error);
       res.status(500).json({ message: "Failed to generate pass", error: error.message });
+    }
+  });
+
+  // Issue a new pass to a customer (for staff use)
+  app.post("/api/customers/:customerId/issue-pass/:cardId", async (req, res) => {
+    try {
+      const customerId = parseInt(req.params.customerId);
+      const cardId = parseInt(req.params.cardId);
+
+      const customer = await db.query.customers.findFirst({
+        where: eq(customers.id, customerId),
+      });
+
+      if (!customer) {
+        return res.status(404).json({ message: "Customer not found" });
+      }
+
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.id, cardId),
+      });
+
+      if (!card) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+
+      // Check if customer already has this card
+      const existingPass = await db.query.customerPasses.findFirst({
+        where: and(
+          eq(customerPasses.customerId, customerId),
+          eq(customerPasses.cardId, cardId)
+        ),
+      });
+
+      if (existingPass) {
+        return res.status(400).json({ 
+          message: "Customer already has this card",
+          passId: existingPass.id
+        });
+      }
+
+      // Create new customer pass
+      const serialNumber = `pass-${cardId}-${customerId}-${Date.now()}`;
+      const [newPass] = await db.insert(customerPasses).values({
+        customerId,
+        cardId,
+        serialNumber,
+        currentBalance: 0,
+        lifetimeBalance: 0,
+      }).returning();
+
+      // Update customer's cardId if not set
+      if (!customer.cardId) {
+        await db.update(customers)
+          .set({ cardId })
+          .where(eq(customers.id, customerId));
+      }
+
+      res.json({ 
+        message: "Pass issued successfully",
+        pass: newPass,
+        downloadUrl: `/api/wallet-pass/${cardId}/${customerId}`
+      });
+
+    } catch (error: any) {
+      console.error("Error issuing pass:", error);
+      res.status(500).json({ message: "Failed to issue pass", error: error.message });
+    }
+  });
+
+  // Staff scan endpoint - add stamps/points when customer visits
+  app.post("/api/staff/scan", async (req, res) => {
+    try {
+      const businessId = 1; // TODO: Get from auth
+      const { qrData, amount = 1, description } = req.body;
+
+      // Parse QR code data
+      let scanData;
+      try {
+        scanData = JSON.parse(qrData);
+      } catch {
+        // Try legacy format: CUSTOMER-{cardId}
+        if (qrData?.startsWith('CUSTOMER-')) {
+          const cardId = parseInt(qrData.split('-')[1]);
+          return res.status(400).json({ 
+            message: "Legacy QR code format. Customer needs to download a new pass.",
+            cardId 
+          });
+        }
+        return res.status(400).json({ message: "Invalid QR code format" });
+      }
+
+      const { cardId, customerId, serial } = scanData;
+
+      if (!cardId) {
+        return res.status(400).json({ message: "Invalid QR code - missing card info" });
+      }
+
+      // If no customerId, this is a preview pass (not issued to a customer)
+      if (!customerId) {
+        return res.status(400).json({ 
+          message: "This is a preview pass. Customer needs to sign up for a personalized card.",
+          cardId
+        });
+      }
+
+      // Find the customer pass
+      const customerPass = await db.query.customerPasses.findFirst({
+        where: and(
+          eq(customerPasses.customerId, customerId),
+          eq(customerPasses.cardId, cardId)
+        ),
+      });
+
+      if (!customerPass) {
+        return res.status(404).json({ message: "Customer pass not found" });
+      }
+
+      // Get card to determine loyalty type
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.id, cardId),
+      });
+
+      if (!card) {
+        return res.status(404).json({ message: "Card not found" });
+      }
+
+      const customer = await db.query.customers.findFirst({
+        where: eq(customers.id, customerId),
+      });
+
+      const design = card.design as any;
+      const loyaltyType = design.loyaltyType || 'stamps';
+      const maxStamps = design.maxStamps || design.stamps || 10;
+      const rewardThreshold = design.rewardThreshold || 100;
+
+      // Calculate new balance
+      const currentBalance = customerPass.currentBalance || 0;
+      let newBalance = currentBalance + amount;
+      let rewardEarned = false;
+      let rewardMessage = '';
+
+      if (loyaltyType === 'stamps') {
+        // Check if customer earned a reward (completed stamp card)
+        if (newBalance >= maxStamps) {
+          rewardEarned = true;
+          rewardMessage = design.rewardDescription || 'Congratulations! You earned a free reward!';
+          newBalance = 0; // Reset stamps after reward
+        }
+      } else {
+        // Points system - check if crossed reward threshold
+        if (currentBalance < rewardThreshold && newBalance >= rewardThreshold) {
+          rewardEarned = true;
+          rewardMessage = design.rewardDescription || `You reached ${rewardThreshold} points! Reward available!`;
+        }
+      }
+
+      // Update the customer pass balance
+      await db.update(customerPasses)
+        .set({ 
+          currentBalance: newBalance,
+          lifetimeBalance: (customerPass.lifetimeBalance || 0) + amount,
+          lastUpdated: new Date()
+        })
+        .where(eq(customerPasses.id, customerPass.id));
+
+      // Update customer stats
+      if (customer) {
+        await db.update(customers)
+          .set({ 
+            points: loyaltyType === 'points' ? newBalance : customer.points,
+            stamps: loyaltyType === 'stamps' ? newBalance : customer.stamps,
+            totalVisits: (customer.totalVisits || 0) + 1
+          })
+          .where(eq(customers.id, customerId));
+      }
+
+      // Record the transaction
+      await db.insert(transactions).values({
+        customerPassId: customerPass.id,
+        type: loyaltyType === 'stamps' ? 'stamp' : 'points',
+        amount,
+        description: description || `Added ${amount} ${loyaltyType === 'stamps' ? 'stamp(s)' : 'point(s)'}`,
+      });
+
+      res.json({
+        success: true,
+        customer: customer ? { id: customer.id, name: customer.name } : null,
+        loyaltyType,
+        previousBalance: currentBalance,
+        newBalance,
+        amountAdded: amount,
+        rewardEarned,
+        rewardMessage,
+        maxStamps: loyaltyType === 'stamps' ? maxStamps : undefined,
+        rewardThreshold: loyaltyType === 'points' ? rewardThreshold : undefined,
+      });
+
+    } catch (error: any) {
+      console.error("Error processing scan:", error);
+      res.status(500).json({ message: "Failed to process scan", error: error.message });
+    }
+  });
+
+  // Get customer pass info by scanning QR
+  app.post("/api/staff/lookup", async (req, res) => {
+    try {
+      const { qrData } = req.body;
+
+      let scanData;
+      try {
+        scanData = JSON.parse(qrData);
+      } catch {
+        return res.status(400).json({ message: "Invalid QR code format" });
+      }
+
+      const { cardId, customerId, serial } = scanData;
+
+      if (!customerId) {
+        return res.status(400).json({ message: "No customer associated with this pass" });
+      }
+
+      const customerPass = await db.query.customerPasses.findFirst({
+        where: and(
+          eq(customerPasses.customerId, customerId),
+          eq(customerPasses.cardId, cardId)
+        ),
+      });
+
+      if (!customerPass) {
+        return res.status(404).json({ message: "Customer pass not found" });
+      }
+
+      const customer = await db.query.customers.findFirst({
+        where: eq(customers.id, customerId),
+      });
+
+      const card = await db.query.loyaltyCards.findFirst({
+        where: eq(loyaltyCards.id, cardId),
+      });
+
+      const design = card?.design as any;
+
+      // Get recent transactions
+      const recentTransactions = await db.query.transactions.findMany({
+        where: eq(transactions.customerPassId, customerPass.id),
+        orderBy: desc(transactions.createdAt),
+        limit: 5,
+      });
+
+      res.json({
+        customer: customer ? {
+          id: customer.id,
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          totalVisits: customer.totalVisits,
+        } : null,
+        pass: {
+          id: customerPass.id,
+          currentBalance: customerPass.currentBalance,
+          lifetimeBalance: customerPass.lifetimeBalance,
+          lastUpdated: customerPass.lastUpdated,
+        },
+        card: card ? {
+          id: card.id,
+          name: card.name,
+          loyaltyType: design?.loyaltyType || 'stamps',
+          maxStamps: design?.maxStamps || design?.stamps || 10,
+          rewardThreshold: design?.rewardThreshold,
+          rewardDescription: design?.rewardDescription,
+        } : null,
+        recentTransactions,
+      });
+
+    } catch (error: any) {
+      console.error("Error looking up pass:", error);
+      res.status(500).json({ message: "Failed to lookup pass", error: error.message });
     }
   });
 
