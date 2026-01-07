@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Camera, QrCode, Plus, Minus, User, Award, History, Check, AlertCircle, Download, Share2, X } from "lucide-react";
+import { Camera, QrCode, Plus, Minus, User, Award, History, Check, AlertCircle, Download, Share2, X, ArrowLeft } from "lucide-react";
+import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Html5Qrcode } from "html5-qrcode";
 
@@ -211,9 +212,16 @@ export default function StaffPage() {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold">Staff Scanner</h1>
-          <p className="text-muted-foreground">Add stamps or points when customers visit</p>
+        <div className="flex items-center gap-4 mb-4">
+          <Link href="/">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div className="flex-1 text-center pr-10">
+            <h1 className="text-3xl font-bold">Staff Scanner</h1>
+            <p className="text-muted-foreground">Add stamps or points when customers visit</p>
+          </div>
         </div>
 
         <div className="flex gap-2 justify-center">
@@ -248,7 +256,8 @@ export default function StaffPage() {
           <CardContent className="space-y-4">
             <div 
               id={scannerContainerId} 
-              className={`w-full aspect-square max-w-sm mx-auto bg-muted rounded-lg overflow-hidden ${cameraActive ? '' : 'hidden'}`}
+              className="w-full aspect-square max-w-sm mx-auto bg-muted rounded-lg overflow-hidden"
+              style={{ display: cameraActive ? 'block' : 'none', minHeight: cameraActive ? '300px' : 0 }}
             />
 
             {cameraError && (

@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Wallet, CheckCircle2 } from "lucide-react";
+import { Loader2, Wallet, CheckCircle2, ArrowLeft } from "lucide-react";
+import { Link } from "wouter";
 
 interface CardData {
   id: number;
@@ -174,10 +175,16 @@ export default function JoinPage() {
 
   if (error || !card) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <div className="text-center space-y-4">
           <h1 className="text-2xl font-bold mb-2">Card Not Found</h1>
           <p className="text-muted-foreground">This loyalty card is no longer available.</p>
+          <Link href="/">
+            <Button variant="outline" className="mt-4">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Go to Home
+            </Button>
+          </Link>
         </div>
       </div>
     );
@@ -250,6 +257,18 @@ export default function JoinPage() {
       className="min-h-screen flex flex-col"
       style={bgStyle}
     >
+      <div className="absolute top-4 left-4">
+        <Link href="/">
+          <Button 
+            variant="ghost" 
+            size="icon"
+            className="bg-white/20 hover:bg-white/30"
+            style={{ color: card.design.textColor }}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+      </div>
       <div className="flex-1 flex flex-col items-center justify-center p-4 py-8">
         <div className="w-full max-w-md space-y-8">
           {(card.design.logo || card.business?.logo) && (
