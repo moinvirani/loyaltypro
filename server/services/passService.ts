@@ -5,6 +5,7 @@ import path from "path";
 import { execSync } from "child_process";
 import forge from 'node-forge';
 import sharp from 'sharp';
+import { AuthTokenService } from './authTokenService';
 
 export interface PassGenerationOptions {
   card: LoyaltyCard;
@@ -200,6 +201,9 @@ export async function generateEnhancedPass(options: PassGenerationOptions): Prom
         });
       }
       
+      // Generate or retrieve authentication token for this pass
+      const authToken = await AuthTokenService.getOrCreateToken(serial);
+
       // Create pass data that exactly matches Apple's specifications
       const passData: any = {
         formatVersion: 1,
@@ -212,6 +216,9 @@ export async function generateEnhancedPass(options: PassGenerationOptions): Prom
         backgroundColor: design.backgroundColor || '#000000',
         labelColor: design.textColor || '#ffffff',
         logoText: business.name,
+        // Apple Wallet web service configuration for push notifications
+        webServiceURL: process.env.WALLET_SERVICE_URL,
+        authenticationToken: authToken,
         generic: {
           primaryFields,
           secondaryFields,

@@ -11,6 +11,8 @@ import writeCerts from "./helpers/writeCerts";
 import { stripeService } from "./stripeService";
 import { getStripePublishableKey, getUncachableStripeClient } from "./stripeClient";
 import { setupAuth } from "./auth";
+import { registerAppleWalletRoutes } from "./appleWalletRoutes";
+import { apnsService } from "./services/apnsService";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.isAuthenticated() || !req.user) {
@@ -25,8 +27,11 @@ function getBusinessId(req: Request): number {
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
-  
+
   setupAuth(app);
+
+  // Register Apple Wallet web service endpoints for push notifications
+  registerAppleWalletRoutes(app);
 
   // Dashboard stats
   app.get("/api/dashboard/stats", requireAuth, async (req, res) => {
@@ -791,7 +796,16 @@ export function registerRoutes(app: Express): Server {
         description: transactionDesc,
       });
 
-      // Generate pass update URL for customer
+      // Send push notification to update pass automatically in Apple Wallet
+      try {
+        await apnsService.sendPassUpdateNotification(customerPass.serialNumber);
+        console.log(`✅ Push notification sent for pass: ${customerPass.serialNumber}`);
+      } catch (pushError: any) {
+        // Don't fail the scan if push notification fails - graceful degradation
+        console.error('⚠️ Failed to send push notification:', pushError.message);
+      }
+
+      // Generate pass update URL for customer (fallback for manual update)
       const passUpdateUrl = `/api/pass/update/${customerId}/${cardId}`;
 
       res.json({

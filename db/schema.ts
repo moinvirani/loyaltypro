@@ -104,6 +104,35 @@ export const customerPasses = pgTable("customer_passes", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Apple Wallet device registrations for push notifications
+export const deviceRegistrations = pgTable("device_registrations", {
+  id: serial("id").primaryKey(),
+  deviceLibraryIdentifier: text("device_library_identifier").notNull(),
+  passTypeIdentifier: text("pass_type_identifier").notNull(),
+  serialNumber: text("serial_number").notNull(),
+  pushToken: text("push_token").notNull(),
+  registeredAt: timestamp("registered_at").defaultNow(),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+});
+
+// Authentication tokens for each pass (security)
+export const passAuthTokens = pgTable("pass_auth_tokens", {
+  id: serial("id").primaryKey(),
+  serialNumber: text("serial_number").unique().notNull(),
+  authToken: text("auth_token").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Push notification log for debugging and monitoring
+export const pushNotificationLog = pgTable("push_notification_log", {
+  id: serial("id").primaryKey(),
+  serialNumber: text("serial_number").notNull(),
+  pushToken: text("push_token").notNull(),
+  status: text("status").notNull(), // 'sent', 'failed', 'invalid_token'
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at").defaultNow(),
+});
+
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
   customerPassId: integer("customer_pass_id").references(() => customerPasses.id).notNull(),
@@ -183,6 +212,9 @@ export type Customer = typeof customers.$inferSelect;
 export type CustomerPass = typeof customerPasses.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type DeviceRegistration = typeof deviceRegistrations.$inferSelect;
+export type PassAuthToken = typeof passAuthTokens.$inferSelect;
+export type PushNotificationLog = typeof pushNotificationLog.$inferSelect;
 
 export const insertBusinessSchema = createInsertSchema(businesses);
 export const selectBusinessSchema = createSelectSchema(businesses);
