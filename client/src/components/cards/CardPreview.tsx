@@ -20,11 +20,11 @@ interface CardPreviewProps {
 }
 
 export function CardPreview({ design, customerId, cardId }: CardPreviewProps) {
-  // Generate QR code value based on available IDs
+  // Generate QR code value based on available IDs - points to customer enrollment page
   const qrValue = customerId 
-    ? `https://${window.location.host}/wallet/${cardId}?customer=${customerId}`
+    ? `https://${window.location.host}/join/${cardId}?customer=${customerId}`
     : cardId 
-      ? `https://${window.location.host}/wallet/${cardId}` 
+      ? `https://${window.location.host}/join/${cardId}` 
       : 'preview';
 
   // Create background style based on design settings
