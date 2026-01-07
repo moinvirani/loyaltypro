@@ -13,7 +13,7 @@ import { Html5Qrcode } from "html5-qrcode";
 interface ScanResult {
   success: boolean;
   customer: { id: number; name: string } | null;
-  loyaltyType: 'stamps' | 'points';
+  loyaltyType: 'stamps' | 'points' | 'membership';
   previousBalance: number;
   newBalance: number;
   amountAdded: number;
@@ -22,6 +22,8 @@ interface ScanResult {
   maxStamps?: number;
   rewardThreshold?: number;
   passUpdateUrl?: string;
+  visitLogged?: boolean;
+  totalVisits?: number;
 }
 
 interface LookupResult {
@@ -41,7 +43,7 @@ interface LookupResult {
   card: {
     id: number;
     name: string;
-    loyaltyType: 'stamps' | 'points';
+    loyaltyType: 'stamps' | 'points' | 'membership';
     maxStamps: number;
     rewardThreshold?: number;
     rewardDescription?: string;
@@ -139,6 +141,11 @@ export default function StaffPage() {
         toast({
           title: "Reward Earned!",
           description: data.rewardMessage || "Customer earned a reward!",
+        });
+      } else if (data.loyaltyType === 'membership') {
+        toast({
+          title: "Visit Logged",
+          description: `Entry recorded for ${data.customer?.name || 'customer'}. Total visits: ${data.totalVisits || data.newBalance}`,
         });
       } else {
         toast({
@@ -382,13 +389,22 @@ export default function StaffPage() {
               </div>
 
               <div className="flex items-center justify-center gap-2">
-                <Badge variant="secondary">
-                  +{lastScan.amountAdded} {lastScan.loyaltyType === 'stamps' ? 'stamp(s)' : 'point(s)'}
-                </Badge>
+                {lastScan.loyaltyType === 'membership' ? (
+                  <Badge variant="secondary">
+                    Visit #{lastScan.totalVisits || lastScan.newBalance} Logged
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">
+                    +{lastScan.amountAdded} {lastScan.loyaltyType === 'stamps' ? 'stamp(s)' : 'point(s)'}
+                  </Badge>
+                )}
                 {lastScan.loyaltyType === 'stamps' && lastScan.maxStamps && (
                   <Badge variant="outline">
                     {lastScan.newBalance}/{lastScan.maxStamps} stamps
                   </Badge>
+                )}
+                {lastScan.loyaltyType === 'membership' && (
+                  <Badge variant="outline">Membership</Badge>
                 )}
               </div>
 
@@ -492,7 +508,9 @@ export default function StaffPage() {
                     <div className="flex flex-wrap gap-2">
                       <Badge>{customerInfo.card.name}</Badge>
                       <Badge variant="outline">
-                        {customerInfo.card.loyaltyType === 'stamps' ? 'Stamp Card' : 'Points Card'}
+                        {customerInfo.card.loyaltyType === 'stamps' ? 'Stamp Card' : 
+                         customerInfo.card.loyaltyType === 'points' ? 'Points Card' : 
+                         'Membership Card'}
                       </Badge>
                     </div>
                   )}

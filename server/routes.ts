@@ -729,11 +729,18 @@ export function registerRoutes(app: Express): Server {
 
       // Calculate new balance
       const currentBalance = customerPass.currentBalance || 0;
-      let newBalance = currentBalance + amount;
+      let newBalance = currentBalance;
       let rewardEarned = false;
       let rewardMessage = '';
+      let visitLogged = false;
+      let totalVisits = (customer?.totalVisits || 0) + 1;
 
-      if (loyaltyType === 'stamps') {
+      if (loyaltyType === 'membership') {
+        // Membership cards just log visits, balance tracks total visits
+        newBalance = currentBalance + 1;
+        visitLogged = true;
+      } else if (loyaltyType === 'stamps') {
+        newBalance = currentBalance + amount;
         // Check if customer earned a reward (completed stamp card)
         if (newBalance >= maxStamps) {
           rewardEarned = true;
@@ -741,7 +748,9 @@ export function registerRoutes(app: Express): Server {
           newBalance = 0; // Reset stamps after reward
         }
       } else {
-        // Points system - check if crossed reward threshold
+        // Points system
+        newBalance = currentBalance + amount;
+        // Check if crossed reward threshold
         if (currentBalance < rewardThreshold && newBalance >= rewardThreshold) {
           rewardEarned = true;
           rewardMessage = design.rewardDescription || `You reached ${rewardThreshold} points! Reward available!`;
@@ -752,7 +761,7 @@ export function registerRoutes(app: Express): Server {
       await db.update(customerPasses)
         .set({ 
           currentBalance: newBalance,
-          lifetimeBalance: (customerPass.lifetimeBalance || 0) + amount,
+          lifetimeBalance: (customerPass.lifetimeBalance || 0) + (loyaltyType === 'membership' ? 1 : amount),
           lastUpdated: new Date()
         })
         .where(eq(customerPasses.id, customerPass.id));
@@ -763,17 +772,23 @@ export function registerRoutes(app: Express): Server {
           .set({ 
             points: loyaltyType === 'points' ? newBalance : customer.points,
             stamps: loyaltyType === 'stamps' ? newBalance : customer.stamps,
-            totalVisits: (customer.totalVisits || 0) + 1
+            totalVisits: totalVisits
           })
           .where(eq(customers.id, customerId));
       }
 
       // Record the transaction
+      const transactionType = loyaltyType === 'stamps' ? 'stamp' : loyaltyType === 'points' ? 'points' : 'visit';
+      const transactionAmount = loyaltyType === 'membership' ? 1 : amount;
+      const transactionDesc = loyaltyType === 'membership' 
+        ? `Visit #${totalVisits} logged` 
+        : description || `Added ${amount} ${loyaltyType === 'stamps' ? 'stamp(s)' : 'point(s)'}`;
+      
       await db.insert(transactions).values({
         customerPassId: customerPass.id,
-        type: loyaltyType === 'stamps' ? 'stamp' : 'points',
-        amount,
-        description: description || `Added ${amount} ${loyaltyType === 'stamps' ? 'stamp(s)' : 'point(s)'}`,
+        type: transactionType,
+        amount: transactionAmount,
+        description: transactionDesc,
       });
 
       // Generate pass update URL for customer
@@ -785,12 +800,14 @@ export function registerRoutes(app: Express): Server {
         loyaltyType,
         previousBalance: currentBalance,
         newBalance,
-        amountAdded: amount,
+        amountAdded: loyaltyType === 'membership' ? 1 : amount,
         rewardEarned,
         rewardMessage,
         maxStamps: loyaltyType === 'stamps' ? maxStamps : undefined,
         rewardThreshold: loyaltyType === 'points' ? rewardThreshold : undefined,
         passUpdateUrl,
+        visitLogged,
+        totalVisits,
       });
 
     } catch (error: any) {
@@ -1159,6 +1176,184 @@ export function registerRoutes(app: Express): Server {
       res.json({ subscription });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // PUBLIC ROUTES - No authentication required (for customer enrollment)
+  
+  // Get public card info for enrollment page
+  app.get("/api/public/cards/:cardId", async (req, res) => {
+    try {
+      const cardId = parseInt(req.params.cardId);
+      if (isNaN(cardId)) {
+        return res.status(400).json({ error: "Invalid card ID" });
+      }
+
+      const card = await db.query.loyaltyCards.findFirst({
+        where: and(
+          eq(loyaltyCards.id, cardId),
+          eq(loyaltyCards.isActive, true)
+        ),
+        with: {
+          business: {
+            columns: {
+              id: true,
+              name: true,
+              logo: true,
+            }
+          }
+        }
+      });
+
+      if (!card) {
+        return res.status(404).json({ error: "Card not found" });
+      }
+
+      res.json(card);
+    } catch (error: any) {
+      console.error('Public card fetch error:', error);
+      res.status(500).json({ error: "Failed to fetch card" });
+    }
+  });
+
+  // Customer enrollment endpoint
+  app.post("/api/public/enroll", async (req, res) => {
+    try {
+      const { cardId, formData } = req.body;
+      
+      if (!cardId || !formData) {
+        return res.status(400).json({ error: "Card ID and form data required" });
+      }
+
+      const parsedCardId = parseInt(cardId);
+      if (isNaN(parsedCardId)) {
+        return res.status(400).json({ error: "Invalid card ID" });
+      }
+
+      // Fetch the card with business info
+      const card = await db.query.loyaltyCards.findFirst({
+        where: and(
+          eq(loyaltyCards.id, parsedCardId),
+          eq(loyaltyCards.isActive, true)
+        ),
+        with: {
+          business: true
+        }
+      });
+
+      if (!card) {
+        return res.status(404).json({ error: "Card not found" });
+      }
+
+      // Check if customer already exists with this email for this business
+      const email = formData.email?.toLowerCase();
+      const name = formData.name;
+
+      if (!email || !name) {
+        return res.status(400).json({ error: "Name and email are required" });
+      }
+
+      let customer = await db.query.customers.findFirst({
+        where: and(
+          eq(customers.email, email),
+          eq(customers.businessId, card.businessId!)
+        )
+      });
+
+      if (!customer) {
+        // Create new customer
+        const [newCustomer] = await db.insert(customers).values({
+          businessId: card.businessId!,
+          name: name,
+          email: email,
+          phone: formData.phone || null,
+          cardId: parsedCardId,
+          points: 0,
+          stamps: 0,
+          totalVisits: 0,
+          totalSpent: 0,
+        }).returning();
+        customer = newCustomer;
+      }
+
+      // Check if customer already has a pass for this card
+      let pass = await db.query.customerPasses.findFirst({
+        where: and(
+          eq(customerPasses.customerId, customer.id),
+          eq(customerPasses.cardId, parsedCardId)
+        )
+      });
+
+      if (!pass) {
+        // Create new pass
+        const serialNumber = `${card.businessId}-${parsedCardId}-${customer.id}-${Date.now()}`;
+        const [newPass] = await db.insert(customerPasses).values({
+          customerId: customer.id,
+          cardId: parsedCardId,
+          serialNumber: serialNumber,
+          currentBalance: 0,
+          lifetimeBalance: 0,
+          isActive: true,
+        }).returning();
+        pass = newPass;
+      }
+
+      // Generate pass download URL
+      const host = req.get('host') || 'localhost:5000';
+      const protocol = req.protocol || 'https';
+      const passUrl = `${protocol}://${host}/api/passes/${pass.serialNumber}/download`;
+
+      res.json({ 
+        success: true, 
+        customerId: customer.id,
+        passId: pass.id,
+        passUrl: passUrl,
+      });
+    } catch (error: any) {
+      console.error('Enrollment error:', error);
+      res.status(500).json({ error: "Failed to enroll customer" });
+    }
+  });
+
+  // Download pass by serial number (public)
+  app.get("/api/passes/:serialNumber/download", async (req, res) => {
+    try {
+      const { serialNumber } = req.params;
+
+      const pass = await db.query.customerPasses.findFirst({
+        where: eq(customerPasses.serialNumber, serialNumber),
+        with: {
+          customer: true,
+          card: {
+            with: {
+              business: true
+            }
+          }
+        }
+      });
+
+      if (!pass || !pass.card || !pass.customer) {
+        return res.status(404).json({ error: "Pass not found" });
+      }
+
+      // Generate and return the pass
+      const passData = await generateEnhancedPass({
+        card: pass.card,
+        business: pass.card.business!,
+        customer: pass.customer,
+        serialNumber: pass.serialNumber,
+        currentBalance: pass.currentBalance || 0,
+      });
+
+      res.set({
+        'Content-Type': 'application/vnd.apple.pkpass',
+        'Content-Disposition': `attachment; filename="${pass.card.name.replace(/\s+/g, '_')}.pkpass"`,
+      });
+
+      res.send(passData);
+    } catch (error: any) {
+      console.error('Pass download error:', error);
+      res.status(500).json({ error: "Failed to generate pass" });
     }
   });
 

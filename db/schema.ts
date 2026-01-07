@@ -3,6 +3,29 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from 'zod';
 
+// Form field configuration for customer enrollment
+export const formFieldSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  type: z.enum(['text', 'email', 'phone', 'date', 'checkbox']),
+  required: z.boolean().default(true),
+  placeholder: z.string().optional(),
+});
+
+// Form template configuration
+export const formTemplateSchema = z.object({
+  welcomeTitle: z.string().default('Welcome'),
+  welcomeSubtitle: z.string().optional(),
+  fields: z.array(formFieldSchema).default([
+    { id: 'name', label: 'Full Name', type: 'text', required: true, placeholder: 'First and Last Name' },
+    { id: 'email', label: 'Email', type: 'email', required: true, placeholder: 'example@gmail.com' },
+    { id: 'phone', label: 'Phone Number', type: 'phone', required: false, placeholder: '+971 50 123 4567' },
+  ]),
+  submitButtonText: z.string().default('Join Now'),
+  termsText: z.string().optional(),
+  termsUrl: z.string().optional(),
+});
+
 // Define the design schema with loyalty type support
 export const designSchema = z.object({
   primaryColor: z.string(),
@@ -13,11 +36,12 @@ export const designSchema = z.object({
   gradientColor: z.string().optional(),
   textColor: z.string().optional(),
   cardStyle: z.string().optional(),
-  loyaltyType: z.enum(['stamps', 'points']).default('stamps'),
+  loyaltyType: z.enum(['stamps', 'points', 'membership']).default('stamps'),
   maxStamps: z.number().optional(),
   pointsPerCurrency: z.number().optional(),
   rewardThreshold: z.number().optional(),
   rewardDescription: z.string().optional(),
+  formTemplate: formTemplateSchema.optional(),
 });
 
 export type Design = z.infer<typeof designSchema>;

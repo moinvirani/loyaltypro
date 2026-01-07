@@ -10,18 +10,16 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (January 2026)
 
+- **Three Loyalty Types**: Now supports stamp cards, points cards, AND membership cards (visit tracking)
+- **Customer Enrollment Flow**: New /join/:cardId page with branded form matching business colors, customers scan QR → fill form → Add to Apple Wallet
+- **Enrollment Form Customization**: Businesses can customize welcome title, subtitle, submit button text, and terms checkbox
+- **Card Designer Redesign**: Sticky preview on desktop, improved mobile template gallery, 3-type selection with icons
+- **Staff Scanner Update**: Handles all 3 card types - adds stamps/points OR logs visits for membership cards
 - **Multi-Tenancy Fix**: Updated ALL 22 API routes to use authenticated business ID instead of hardcoded businessId: 1
 - **Built-in QR Scanner**: Integrated html5-qrcode camera scanning in staff page, eliminating need for external scanner apps
 - **Onboarding Wizard**: 4-step wizard (business info, plan selection with 14-day trial, first card, complete)
 - **Free Trial**: Server-enforced 14-day trial period (TRIAL_DAYS constant), client passes withTrial boolean only
 - **Authentication System**: Complete business login/signup with password hashing (scrypt), passport-local strategy, session management
-- **Staff Scanner**: Mobile-friendly scanner page at /staff with built-in camera QR scanning and manual input fallback
-- **Wallet Pass Updates**: Customers can download updated passes with current balance via Copy Link or Download buttons
-- **Responsive Design**: Mobile hamburger menu, Sheet-based navigation, responsive padding across all breakpoints
-- **Stripe Integration**: Set up subscription billing with 3 pricing tiers (Starter 29 AED, Growth 79 AED, Enterprise 199 AED)
-- **Landing Page**: Created marketing page with hero, features, pricing toggle (monthly/yearly), testimonials
-- **Dashboard Enhancement**: Added analytics charts (area, pie, bar), stat cards with trends, quick actions sidebar
-- **Card Designer Templates**: Added 8 pre-built templates with loyalty type selection (stamps vs points)
 
 ## System Architecture
 
@@ -45,14 +43,17 @@ Preferred communication style: Simple, everyday language.
 - `/customers` - Customer management (protected)
 - `/branches` - Branch location management (protected)
 - `/staff` - Staff scanner for adding stamps/points (public for tablet use)
+- `/join/:cardId` - Customer enrollment form (public, branded per business)
 
 **Card Designer Features:**
-- 8 pre-built templates with visual previews
-- Live preview with Card and Wallet tabs
+- 8 pre-built templates with visual previews and mobile-friendly gallery
+- Three loyalty types: stamps (stamp cards), points (service businesses), membership (visit tracking)
+- Sticky live preview on desktop, bottom preview on mobile
 - Color customization (primary, background, gradient)
 - Logo upload with 5MB limit
-- Stamp count configuration (1-15)
-- Apple Wallet pass generation
+- Stamp count configuration (1-15), points per currency, reward thresholds
+- Enrollment form template customization (welcome title/subtitle, submit button, terms checkbox)
+- Apple Wallet pass generation with QR code for customer enrollment
 
 ### Backend Architecture
 
