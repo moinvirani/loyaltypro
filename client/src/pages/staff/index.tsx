@@ -66,6 +66,7 @@ export default function StaffPage() {
   const [customerInfo, setCustomerInfo] = useState<LookupResult | null>(null);
   const [mode, setMode] = useState<'scan' | 'lookup'>('scan');
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerId = "qr-reader";
@@ -80,11 +81,15 @@ export default function StaffPage() {
 
   const startCamera = async () => {
     setCameraError(null);
+    setCameraStarting(true);
     
     try {
       if (scannerRef.current?.isScanning) {
         await scannerRef.current.stop();
       }
+
+      // Small delay to ensure container is rendered
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       const scanner = new Html5Qrcode(scannerContainerId);
       scannerRef.current = scanner;
@@ -107,10 +112,12 @@ export default function StaffPage() {
       );
 
       setCameraActive(true);
+      setCameraStarting(false);
     } catch (error: any) {
       console.error("Camera error:", error);
       setCameraError(error.message || "Unable to access camera");
       setCameraActive(false);
+      setCameraStarting(false);
     }
   };
 
@@ -123,6 +130,7 @@ export default function StaffPage() {
       console.error("Error stopping camera:", error);
     }
     setCameraActive(false);
+    setCameraStarting(false);
   };
 
   const scanMutation = useMutation({
@@ -254,11 +262,23 @@ export default function StaffPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div 
-              id={scannerContainerId} 
-              className="w-full aspect-square max-w-sm mx-auto bg-muted rounded-lg overflow-hidden"
-              style={{ display: cameraActive ? 'block' : 'none', minHeight: cameraActive ? '300px' : 0 }}
-            />
+            {(cameraStarting || cameraActive) && (
+              <div className="relative">
+                <div 
+                  id={scannerContainerId} 
+                  className="w-full aspect-square max-w-sm mx-auto bg-black rounded-lg overflow-hidden"
+                  style={{ minHeight: '300px' }}
+                />
+                {cameraStarting && !cameraActive && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg">
+                    <div className="text-center text-white">
+                      <Camera className="h-8 w-8 mx-auto mb-2 animate-pulse" />
+                      <p className="text-sm">Starting camera...</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {cameraError && (
               <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-center">
@@ -270,7 +290,7 @@ export default function StaffPage() {
               </div>
             )}
 
-            {!cameraActive && !cameraError && (
+            {!cameraActive && !cameraStarting && !cameraError && (
               <div className="bg-muted rounded-lg p-8 text-center">
                 <Camera className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <Button onClick={startCamera} size="lg">
@@ -280,7 +300,7 @@ export default function StaffPage() {
               </div>
             )}
 
-            {cameraActive && (
+            {(cameraActive || cameraStarting) && (
               <Button 
                 variant="outline" 
                 onClick={stopCamera}
