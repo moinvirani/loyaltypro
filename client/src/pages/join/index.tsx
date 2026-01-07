@@ -58,6 +58,13 @@ export default function JoinPage() {
 
   const { data: card, isLoading, error } = useQuery<CardData>({
     queryKey: ['/api/public/cards', cardId],
+    queryFn: async () => {
+      const res = await fetch(`/api/public/cards/${cardId}`);
+      if (!res.ok) {
+        throw new Error('Card not found');
+      }
+      return res.json();
+    },
     enabled: !!cardId,
   });
 
