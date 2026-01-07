@@ -4,3 +4,11 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Apple APNs private key - DO NOT COMMIT
+*.p8
+AuthKey_*.p8
+
+# Replit/Claude files
+.replit
+.claude/
