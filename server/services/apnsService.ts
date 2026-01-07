@@ -2,6 +2,8 @@ import apn from '@parse/node-apn';
 import { db } from '@db';
 import { deviceRegistrations, pushNotificationLog } from '@db/schema';
 import { eq } from 'drizzle-orm';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Apple Push Notification Service (APNs) integration
@@ -16,19 +18,35 @@ class APNsService {
 
   /**
    * Initialize the APNs provider with token-based authentication
-   * Requires environment variables: APPLE_APNS_KEY, APPLE_APNS_KEY_ID, APPLE_TEAM_ID
+   * Tries to read from .p8 file first, then falls back to environment variable
+   * Requires environment variables: APPLE_APNS_KEY_ID, APPLE_TEAM_ID
    */
   private initializeProvider() {
-    if (!process.env.APPLE_APNS_KEY || !process.env.APPLE_APNS_KEY_ID || !process.env.APPLE_TEAM_ID) {
+    if (!process.env.APPLE_APNS_KEY_ID || !process.env.APPLE_TEAM_ID) {
       console.warn('⚠️ APNs credentials not configured. Push notifications will be disabled.');
-      console.warn('Set APPLE_APNS_KEY, APPLE_APNS_KEY_ID, and APPLE_TEAM_ID to enable push notifications.');
+      console.warn('Set APPLE_APNS_KEY_ID and APPLE_TEAM_ID to enable push notifications.');
       return;
     }
 
     try {
+      let apnsKey: string | undefined;
+
+      // Try to read from .p8 file first (more reliable for multiline keys)
+      const p8FilePath = path.join(process.cwd(), `AuthKey_${process.env.APPLE_APNS_KEY_ID}.p8`);
+      if (fs.existsSync(p8FilePath)) {
+        console.log(`📄 Reading APNs key from file: ${p8FilePath}`);
+        apnsKey = fs.readFileSync(p8FilePath, 'utf8');
+      } else if (process.env.APPLE_APNS_KEY) {
+        console.log('📄 Reading APNs key from environment variable');
+        apnsKey = process.env.APPLE_APNS_KEY;
+      } else {
+        console.warn('⚠️ APNs key not found. Upload AuthKey_XXXXX.p8 file or set APPLE_APNS_KEY.');
+        return;
+      }
+
       const options: apn.ProviderOptions = {
         token: {
-          key: process.env.APPLE_APNS_KEY,
+          key: apnsKey,
           keyId: process.env.APPLE_APNS_KEY_ID,
           teamId: process.env.APPLE_TEAM_ID,
         },
